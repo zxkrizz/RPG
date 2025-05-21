@@ -1,25 +1,28 @@
 # file: rsc_engine/game.py
-from pathlib import Path  # To zostaje, jeśli C.ASSETS jest używane lokalnie do budowania ścieżek
+from pathlib import Path
 import pygame
+import json
+import os
 
-from rsc_engine import constants as C  # Importujemy constants jako C
+from rsc_engine import constants as C
 # Importuj stany i PlayerData
 from rsc_engine.states import GameStateManager, BaseState, PlayerData
 # Importuj konkretne implementacje stanów
-from rsc_engine.game_states import MenuState, CharacterCreationState, GameplayState
+# Zakładamy, że te stany są teraz zdefiniowane w rsc_engine/game_states.py
+from rsc_engine.game_states import MenuState, CharacterCreationState, GameplayState, PauseMenuState, LoadGameState
 
-# Importy potrzebne dla GameplayState (lub przekazywane do niego)
+# Importy potrzebne dla różnych części, głównie dla metod pomocniczych w Game
 from rsc_engine.camera import Camera
 from rsc_engine.tilemap import TileMap
 from rsc_engine.entity import Player, FriendlyNPC, HostileNPC, Entity
 from rsc_engine.utils import screen_to_iso, iso_to_screen
 from rsc_engine.ui import UI, ContextMenu, DamageSplat
 from rsc_engine.inventory import Inventory, Item
-from typing import Tuple, Callable, Optional, List
+from typing import Tuple, Callable, Optional, List, Dict, Any
 
+# Stałe ASSETS, TARGET_CHAR_HEIGHT itp. są teraz w constants.py (C.ASSETS, C.TARGET_CHAR_HEIGHT)
+SAVE_DIR = Path(".") / "saves"  # Tworzy katalog 'saves' w głównym folderze projektu (RPG)
 
-# Stałe ASSETS, TARGET_CHAR_HEIGHT itp. zostały przeniesione do constants.py
-# Będziemy się do nich odwoływać przez C.NAZWA_STALEJ
 
 class Game:
     def __init__(self,
@@ -33,65 +36,186 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
 
+        # Atrybuty, które będą zarządzane przez GameplayState lub inne stany.
+        # Game może przechowywać referencje, jeśli są potrzebne globalnie.
         self.player: Optional[Player] = None
-        self.entities: Optional[pygame.sprite.Group] = None
-        self.tilemap: Optional[TileMap] = None
-        self.camera: Optional[Camera] = None
-        self.ui: Optional[UI] = None
-        self.context_menu: Optional[ContextMenu] = None
-        self.inventory: Optional[Inventory] = None
+        self.entities: Optional[pygame.sprite.Group] = pygame.sprite.Group()  # Inicjalizuj jako pustą grupę
+        self.tilemap: Optional[TileMap] = None  # Będzie ustawiane przez GameplayState
+        self.camera: Optional[Camera] = None  # Będzie ustawiane przez GameplayState
+        self.ui: Optional[UI] = None  # Będzie ustawiane przez GameplayState
+        self.context_menu: Optional[ContextMenu] = None  # Będzie ustawiane przez GameplayState
+        self.inventory: Optional[Inventory] = None  # Będzie ustawiane przez GameplayState
         self.damage_splats: List[DamageSplat] = []
 
-        self.damage_icon_image = None
-        self.damage_font = None
+        self.damage_icon_image = None  # Ładowane w _load_damage_splat_assets_global
+        self.damage_font = None  # Ładowane w _load_damage_splat_assets_global
+        self._load_damage_splat_assets_global()  # Załaduj od razu, stany mogą tego potrzebować
 
         self.shared_game_data = {
-            "player_data": None
+            "player_data": None,
+            "current_save_slot": None
         }
 
-        initial_state_key = "GAMEPLAY" if C.DEV_SKIP_MENU_AND_CREATOR else "MENU"
-        self.state_manager = GameStateManager(initial_state_key, self)
-        self._register_states()
+        SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-        if C.DEV_SKIP_MENU_AND_CREATOR:
-            self.state_manager.set_state("GAMEPLAY", PlayerData(name="DevBypass"))
-        else:
-            self.state_manager.set_state("MENU")
+        # Inicjalizuj GameStateManager bez initial_state_key
+        self.state_manager = GameStateManager(None, self)
+        self._register_states()  # Najpierw zarejestruj wszystkie stany
+
+        # Teraz ustaw stan początkowy
+        initial_state_key = "GAMEPLAY" if C.DEV_SKIP_MENU_AND_CREATOR else "MENU"
+        initial_data = None
+        if initial_state_key == "GAMEPLAY" and C.DEV_SKIP_MENU_AND_CREATOR:
+            dev_save_path = SAVE_DIR / "dev_save.json"
+            if dev_save_path.exists():
+                try:
+                    with open(dev_save_path, 'r') as f:
+                        data_dict = json.load(f)
+                    if "player_data" in data_dict:
+                        initial_data = PlayerData.from_dict(data_dict["player_data"])
+                        print(f"[INFO] Loaded dev save: {initial_data}")
+                    else:
+                        print(f"[WARNING] dev_save.json is missing 'player_data' key. Using default dev data.")
+                        initial_data = PlayerData(name="DevBypass")
+                except Exception as e:
+                    print(f"[ERROR] Could not load or parse dev_save.json: {e}. Using default dev data.")
+                    initial_data = PlayerData(name="DevBypass")
+            else:
+                print("[INFO] dev_save.json not found. Using default dev data for DEV_SKIP mode.")
+                initial_data = PlayerData(name="DevBypass")
+
+        self.state_manager.set_state(initial_state_key, initial_data)
 
     def _register_states(self):
         self.state_manager.register_state("MENU", MenuState(self))
         self.state_manager.register_state("CHARACTER_CREATION", CharacterCreationState(self))
         self.state_manager.register_state("GAMEPLAY", GameplayState(self))
+        self.state_manager.register_state("PAUSE_MENU", PauseMenuState(self))
+        self.state_manager.register_state("LOAD_GAME", LoadGameState(self))
+        # self.state_manager.register_state("OPTIONS", OptionsState(self))
+
+    def get_save_file_path(self, slot_number: int) -> Path:
+        return SAVE_DIR / f"save_slot_{slot_number}.json"
+
+    def save_game(self, slot_number: int):
+        if self.state_manager.active_state_key != "GAMEPLAY" or not self.player:
+            print("[ERROR] Cannot save game: Not in GameplayState or Player not initialized.")
+            if self.ui and hasattr(self.ui, 'show_dialogue'):
+                self.ui.show_dialogue("System", ["Error: Cannot save game state now."])
+            return
+
+        current_map_id = "default_map"
+        if self.tilemap and hasattr(self.tilemap, 'map_id'):
+            current_map_id = self.tilemap.map_id
+        elif self.tilemap and hasattr(self.tilemap, 'csv_path'):
+            current_map_id = Path(self.tilemap.csv_path).stem
+
+        player_data_to_save = PlayerData(
+            name=self.player.name,
+            level=self.player.level,
+            start_ix=self.player.ix,
+            start_iy=self.player.iy,
+            max_hp=self.player.max_hp,
+            current_hp=self.player.hp,
+            xp=getattr(self.player, 'xp', 0),
+            map_id=current_map_id
+        )
+
+        game_state_to_save = {
+            "player_data": player_data_to_save.to_dict(),
+            "timestamp": pygame.time.get_ticks(),
+            "game_version": "0.1"
+        }
+
+        save_path = self.get_save_file_path(slot_number)
+        try:
+            with open(save_path, 'w') as f:
+                json.dump(game_state_to_save, f, indent=4, ensure_ascii=False)
+            print(f"[INFO] Game saved to slot {slot_number} ({save_path})")
+            if self.ui and hasattr(self.ui, 'show_dialogue'):
+                self.ui.show_dialogue("System", [f"Game saved to slot {slot_number}."])
+        except Exception as e:
+            print(f"[ERROR] Could not save game to slot {slot_number}: {e}")
+            if self.ui and hasattr(self.ui, 'show_dialogue'):
+                self.ui.show_dialogue("System", [f"Error saving game: {e}"])
+
+    def load_game_data_from_slot(self, slot_number: int) -> Optional[PlayerData]:
+        save_path = self.get_save_file_path(slot_number)
+        if not save_path.exists():
+            print(f"[ERROR] Save slot {slot_number} not found at {save_path}")
+            return None
+
+        try:
+            with open(save_path, 'r') as f:
+                game_state_loaded = json.load(f)
+            if "player_data" not in game_state_loaded:
+                print(f"[ERROR] Save slot {slot_number} is corrupted or has old format (missing 'player_data').")
+                return None
+
+            player_data = PlayerData.from_dict(game_state_loaded["player_data"])
+            print(f"[INFO] Loaded game data from slot {slot_number}: {player_data}")
+            self.shared_game_data["current_save_slot"] = slot_number
+            return player_data
+        except Exception as e:
+            print(f"[ERROR] Could not load game from slot {slot_number}: {e}")
+            return None
+
+    def get_save_slot_info(self) -> List[Dict[str, Any]]:
+        save_infos = []
+        for i in range(1, 4):
+            path = self.get_save_file_path(i)
+            info = {"slot": i, "exists": False, "player_name": "Empty", "level": "-", "map_id": "-"}
+            if path.exists():
+                try:
+                    with open(path, 'r') as f:
+                        data = json.load(f)
+                    if "player_data" in data:
+                        info["exists"] = True
+                        pd = data["player_data"]
+                        info["player_name"] = pd.get("name", "N/A")
+                        info["level"] = pd.get("level", "N/A")
+                        info["map_id"] = pd.get("map_id", "N/A")
+                except Exception as e:
+                    print(f"[WARNING] Could not parse save slot {i} info: {e}")
+                    info["player_name"] = "Corrupted"
+            save_infos.append(info)
+        return save_infos
 
     def run(self):
         while self.running:
             dt = self.clock.tick(C.FPS) / 1000.0
-
             events = pygame.event.get()
             for event in events:
-                if event.type == pygame.QUIT:
-                    self.running = False
+                if event.type == pygame.QUIT: self.running = False
                 if event.type == pygame.VIDEORESIZE:
-                    new_width, new_height = event.size
-                    self.window_screen = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
-
+                    self.window_screen = pygame.display.set_mode(event.size, pygame.RESIZABLE)
             if not self.running: break
 
             self.state_manager.handle_events(events)
             self.state_manager.update(dt)
 
-            self.state_manager.draw(self.logical_screen)
+            if self.state_manager.active_state:
+                self.state_manager.draw(self.logical_screen)
+            else:
+                self.logical_screen.fill((0, 0, 0))
 
             scaled_surface = pygame.transform.scale(self.logical_screen, self.window_screen.get_size())
             self.window_screen.blit(scaled_surface, (0, 0))
 
             if self.state_manager.active_state_key == "GAMEPLAY" and \
-                    hasattr(self,
-                            'context_menu') and self.context_menu and self.context_menu.is_visible:  # Dodano hasattr
+                    self.context_menu and self.context_menu.is_visible:  # Sprawdź też, czy context_menu nie jest None
                 self.context_menu.draw(self.window_screen)
-
             pygame.display.flip()
         pygame.quit()
+
+    def _process_events(self):
+        pass
+
+    def _update(self, dt: float):
+        pass
+
+    def _draw(self):
+        pass
 
     def get_scaled_mouse_pos(self, physical_mouse_pos: Tuple[int, int]) -> Tuple[int, int]:
         window_w, window_h = self.window_screen.get_size()
@@ -104,7 +228,6 @@ class Game:
         return physical_mouse_pos
 
     def _load_image(self, name: str) -> pygame.Surface:
-        # Użyj C.ASSETS do budowania ścieżki
         return pygame.image.load(str(C.ASSETS / name)).convert_alpha()
 
     def _scale_image_proportionally(self, image: pygame.Surface, target_height: int,
@@ -118,9 +241,8 @@ class Game:
             return pygame.transform.scale(image, (target_width, target_height))
         return pygame.transform.smoothscale(image, (target_width, target_height))
 
-    # Metody specyficzne dla rozgrywki, które są teraz wywoływane przez GameplayState na obiekcie 'game'
     def is_tile_occupied_by_entity(self, ix: int, iy: int, excluding_entity: Optional[Entity] = None) -> bool:
-        if not self.entities: return False  # entities jest teraz atrybutem GameplayState, ale game ma referencję
+        if not self.entities: return False
         for entity in self.entities:
             if entity == excluding_entity: continue
             if entity.is_alive and entity.ix == ix and entity.iy == iy:
@@ -128,7 +250,7 @@ class Game:
         return False
 
     def show_examine_text(self, target_entity: Optional[Entity]):
-        if target_entity and self.ui:  # ui jest atrybutem GameplayState, ale game ma referencję
+        if target_entity and self.ui:
             message = f"It's a {target_entity.name} (Lvl: {target_entity.level}, HP: {target_entity.hp}/{target_entity.max_hp})."
             if hasattr(self.ui, 'show_dialogue'):
                 self.ui.show_dialogue("System", [message])
@@ -154,18 +276,18 @@ class Game:
     def player_walk_to_and_act(self, target_coords_iso: Tuple[int, int], final_action: Callable,
                                action_target: Optional[Entity] = None):
         if not self.player or not self.player.is_alive: return
-        # player jest teraz atrybutem GameplayState, game ma do niego referencję
         self.player.target_entity_for_action = action_target
         self.player.action_after_reaching_target = final_action
-        self.player.set_path(target_coords_iso[0], target_coords_iso[1], self.tilemap)
+        if self.tilemap:
+            self.player.set_path(target_coords_iso[0], target_coords_iso[1], self.tilemap)
+        else:
+            print("[ERROR] player_walk_to_and_act: Tilemap not available for pathfinding.")
 
     def _load_damage_splat_assets_global(self):
         try:
-            # Użyj C.ASSETS i C.TARGET_SPLAT_ICON_WIDTH/HEIGHT
             damage_icon_path = C.ASSETS / "ui" / "damage_icon.png"
-            loaded_icon = pygame.image.load(str(damage_icon_path)).convert_alpha()  # Bezpośrednie ładowanie
-            self.damage_icon_image = pygame.transform.smoothscale(loaded_icon, (C.TARGET_SPLAT_ICON_WIDTH,
-                                                                                C.TARGET_SPLAT_ICON_HEIGHT))
+            loaded_icon = pygame.image.load(str(damage_icon_path)).convert_alpha()
+            self.damage_icon_image = self._scale_image_proportionally(loaded_icon, C.TARGET_SPLAT_ICON_HEIGHT)
         except pygame.error as e:
             print(f"Could not load damage_icon.png from {damage_icon_path}: {e}. Using placeholder.")
             self.damage_icon_image = pygame.Surface((C.TARGET_SPLAT_ICON_WIDTH, C.TARGET_SPLAT_ICON_HEIGHT),
@@ -191,4 +313,4 @@ class Game:
         top_y = logical_entity_rect_on_cam.top
 
         splat = DamageSplat(value, center_x, top_y, self.damage_icon_image, self.damage_font, self.camera)
-        self.damage_splats.append(splat)  # damage_splats jest teraz w Game, zarządzane przez GameplayState.update
+        self.damage_splats.append(splat)
