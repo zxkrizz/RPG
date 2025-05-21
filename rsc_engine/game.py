@@ -5,13 +5,9 @@ import json
 import os
 
 from rsc_engine import constants as C
-# Importuj stany i PlayerData
 from rsc_engine.states import GameStateManager, BaseState, PlayerData
-# Importuj konkretne implementacje stanów
-# Zakładamy, że te stany są teraz zdefiniowane w rsc_engine/game_states.py
 from rsc_engine.game_states import MenuState, CharacterCreationState, GameplayState, PauseMenuState, LoadGameState
 
-# Importy potrzebne dla różnych części, głównie dla metod pomocniczych w Game
 from rsc_engine.camera import Camera
 from rsc_engine.tilemap import TileMap
 from rsc_engine.entity import Player, FriendlyNPC, HostileNPC, Entity
@@ -20,8 +16,7 @@ from rsc_engine.ui import UI, ContextMenu, DamageSplat
 from rsc_engine.inventory import Inventory, Item
 from typing import Tuple, Callable, Optional, List, Dict, Any
 
-# Stałe ASSETS, TARGET_CHAR_HEIGHT itp. są teraz w constants.py (C.ASSETS, C.TARGET_CHAR_HEIGHT)
-SAVE_DIR = Path(".") / "saves"  # Tworzy katalog 'saves' w głównym folderze projektu (RPG)
+SAVE_DIR = Path(".") / "saves"
 
 
 class Game:
@@ -36,20 +31,18 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
 
-        # Atrybuty, które będą zarządzane przez GameplayState lub inne stany.
-        # Game może przechowywać referencje, jeśli są potrzebne globalnie.
         self.player: Optional[Player] = None
-        self.entities: Optional[pygame.sprite.Group] = pygame.sprite.Group()  # Inicjalizuj jako pustą grupę
-        self.tilemap: Optional[TileMap] = None  # Będzie ustawiane przez GameplayState
-        self.camera: Optional[Camera] = None  # Będzie ustawiane przez GameplayState
-        self.ui: Optional[UI] = None  # Będzie ustawiane przez GameplayState
-        self.context_menu: Optional[ContextMenu] = None  # Będzie ustawiane przez GameplayState
-        self.inventory: Optional[Inventory] = None  # Będzie ustawiane przez GameplayState
+        self.entities: Optional[pygame.sprite.Group] = pygame.sprite.Group()
+        self.tilemap: Optional[TileMap] = None
+        self.camera: Optional[Camera] = None
+        self.ui: Optional[UI] = None
+        self.context_menu: Optional[ContextMenu] = None
+        self.inventory: Optional[Inventory] = None
         self.damage_splats: List[DamageSplat] = []
 
-        self.damage_icon_image = None  # Ładowane w _load_damage_splat_assets_global
-        self.damage_font = None  # Ładowane w _load_damage_splat_assets_global
-        self._load_damage_splat_assets_global()  # Załaduj od razu, stany mogą tego potrzebować
+        self.damage_icon_image = None
+        self.damage_font = None
+        self._load_damage_splat_assets_global()
 
         self.shared_game_data = {
             "player_data": None,
@@ -58,11 +51,9 @@ class Game:
 
         SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-        # Inicjalizuj GameStateManager bez initial_state_key
         self.state_manager = GameStateManager(None, self)
-        self._register_states()  # Najpierw zarejestruj wszystkie stany
+        self._register_states()
 
-        # Teraz ustaw stan początkowy
         initial_state_key = "GAMEPLAY" if C.DEV_SKIP_MENU_AND_CREATOR else "MENU"
         initial_data = None
         if initial_state_key == "GAMEPLAY" and C.DEV_SKIP_MENU_AND_CREATOR:
@@ -92,7 +83,6 @@ class Game:
         self.state_manager.register_state("GAMEPLAY", GameplayState(self))
         self.state_manager.register_state("PAUSE_MENU", PauseMenuState(self))
         self.state_manager.register_state("LOAD_GAME", LoadGameState(self))
-        # self.state_manager.register_state("OPTIONS", OptionsState(self))
 
     def get_save_file_path(self, slot_number: int) -> Path:
         return SAVE_DIR / f"save_slot_{slot_number}.json"
@@ -203,11 +193,14 @@ class Game:
             self.window_screen.blit(scaled_surface, (0, 0))
 
             if self.state_manager.active_state_key == "GAMEPLAY" and \
-                    self.context_menu and self.context_menu.is_visible:  # Sprawdź też, czy context_menu nie jest None
+                    self.context_menu and self.context_menu.is_visible:
                 self.context_menu.draw(self.window_screen)
             pygame.display.flip()
         pygame.quit()
 
+    # Metody _process_events, _update, _draw są teraz PUSTE w Game,
+    # ponieważ ich logika została przeniesiona do odpowiednich stanów (głównie GameplayState)
+    # i jest wywoływana przez GameStateManager.
     def _process_events(self):
         pass
 
@@ -217,15 +210,16 @@ class Game:
     def _draw(self):
         pass
 
+    # Metody pomocnicze, które mogą być używane przez stany (przez self.game.metoda())
     def get_scaled_mouse_pos(self, physical_mouse_pos: Tuple[int, int]) -> Tuple[int, int]:
         window_w, window_h = self.window_screen.get_size()
         logical_w, logical_h = self.logical_screen.get_size()
-        if window_w > 0 and window_h > 0:
+        if window_w > 0 and window_h > 0:  # Unikaj dzielenia przez zero
             mouse_scale_x = logical_w / window_w
             mouse_scale_y = logical_h / window_h
             return (int(physical_mouse_pos[0] * mouse_scale_x),
                     int(physical_mouse_pos[1] * mouse_scale_y))
-        return physical_mouse_pos
+        return physical_mouse_pos  # Fallback
 
     def _load_image(self, name: str) -> pygame.Surface:
         return pygame.image.load(str(C.ASSETS / name)).convert_alpha()
@@ -276,6 +270,7 @@ class Game:
     def player_walk_to_and_act(self, target_coords_iso: Tuple[int, int], final_action: Callable,
                                action_target: Optional[Entity] = None):
         if not self.player or not self.player.is_alive: return
+        # player jest teraz atrybutem GameplayState, ale Game ma do niego referencję
         self.player.target_entity_for_action = action_target
         self.player.action_after_reaching_target = final_action
         if self.tilemap:
