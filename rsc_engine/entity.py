@@ -1,14 +1,14 @@
 from __future__ import annotations
 import pygame
-from rsc_engine.utils import iso_to_screen  #
+from rsc_engine.utils import iso_to_screen
 from typing import TYPE_CHECKING, Optional, List, Dict, Any, Callable
 
 if TYPE_CHECKING:
-    from rsc_engine.tilemap import TileMap  #
-    from rsc_engine.game import Game  #
+    from rsc_engine.tilemap import TileMap
+    from rsc_engine.game import Game
 
 
-def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:  #
+def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     dx, dy = abs(x1 - x0), abs(y1 - y0)
     sx = 1 if x0 < x1 else -1
     sy = 1 if y0 < y1 else -1
@@ -30,55 +30,53 @@ def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:  #
     return path
 
 
-class Entity(pygame.sprite.Sprite):  #
+class Entity(pygame.sprite.Sprite):
     def __init__(self,
                  game: "Game",
                  name: str,
                  ix: int,
                  iy: int,
                  image: pygame.Surface,
+                 entity_id: str,
                  level: int = 1,
                  max_hp: int = 10,
                  attack_power: int = 1,
                  defense: int = 0,
-                 attack_speed: float = 1.5):  # Domyślna prędkość ataku
+                 attack_speed: float = 1.5):
         super().__init__()
         self.game = game
         self.name = name
         self.ix = ix
         self.iy = iy
         self.image = image
-        self.rect = self.image.get_rect()  #
+        self.rect = self.image.get_rect()
+        self.entity_id = entity_id
 
         self.level = level
-        self.max_hp = max_hp  #
-        self.hp = max_hp  #
+        self.max_hp = max_hp
+        self.hp = max_hp
         self.attack_power = attack_power
         self.defense = defense
 
-        self.current_action: str = "idle"  # np. "idle", "walking", "fighting", "dead"
+        self.current_action: str = "idle"
         self.is_alive: bool = True
 
-        # --- Atrybuty walki ---
         self.in_combat: bool = False
         self.combat_target: Optional[Entity] = None
         self.attack_speed: float = attack_speed
         self.attack_cooldown_timer: float = 0.0
-        self.show_hp_bar: bool = False  # Czy pokazywać pasek HP nad tą encją
+        self.show_hp_bar: bool = False
 
         self.update_rect()
 
-    def update_rect(self):  #
-        sx, sy = iso_to_screen(self.ix, self.iy)  #
+    def update_rect(self):
+        sx, sy = iso_to_screen(self.ix, self.iy)
         self.rect.center = (sx, sy)
 
     def take_damage(self, amount: int):
         actual_damage = max(0, amount - self.defense)
         self.hp -= actual_damage
 
-        # Tworzenie DamageSplat
-        # Sprawdź, czy self.game istnieje i ma metodę create_damage_splat
-        # Pokaż splat nawet jeśli to był śmiertelny cios (stąd warunek na hp+actual_damage)
         if hasattr(self.game, 'create_damage_splat') and (
                 self.is_alive or (not self.is_alive and self.hp + actual_damage > 0)):
             self.game.create_damage_splat(actual_damage, self)
@@ -109,7 +107,7 @@ class Entity(pygame.sprite.Sprite):  #
                     f"[DEBUG] {former_target.name} was targeting the now dead {self.name}. {former_target.name} leaves combat.")
                 former_target.leave_combat()
 
-            if hasattr(self.game, 'entities'):  # Upewnij się, że game i entities istnieją
+            if hasattr(self.game, 'entities') and self.game.entities is not None:
                 for entity in self.game.entities:
                     if entity.combat_target == self and entity.is_alive:
                         print(
@@ -137,7 +135,8 @@ class Entity(pygame.sprite.Sprite):  #
         self.in_combat = True
         self.combat_target = target
         self.current_action = "fighting"
-        self.path = []
+        if hasattr(self, 'path'): self.path = []
+
         if hasattr(self, 'target_tile_coords'):
             self.target_tile_coords = None
         if hasattr(self, 'action_after_reaching_target'):
@@ -150,25 +149,17 @@ class Entity(pygame.sprite.Sprite):  #
             self.show_hp_bar = True
 
         if not target.in_combat or target.combat_target != self:
-            # Cel również wchodzi w walkę
-            # Nie wywołuj enter_combat_with dla celu tutaj, jeśli cel to gracz, bo gracz sam zarządza swoim wejściem w walkę
-            # przez Player.initiate_attack_on_target LUB gdy jest atakowany przez NPC (co obsłuży _handle_automatic_combat celu)
             if isinstance(target, Player):
                 print(
                     f"[DEBUG] {target.name} (Player) is now targeted by {self.name}, should enter combat if attacked.")
-                # Gracz wejdzie w walkę, gdy _handle_automatic_combat NPC go zaatakuje,
-                # lub jeśli sam zainicjował atak.
-                # Dla pewności, można tu ustawić flagi gracza, jeśli NPC go atakuje.
-                if not target.in_combat:  # Jeśli gracz nie jest jeszcze w walce
+                if not target.in_combat:
                     target.in_combat = True
                     target.combat_target = self
                     target.current_action = "fighting"
                     print(f"[DEBUG] {target.name} (Player) was not in combat, now fighting {self.name}")
-                # Pokaż pasek HP tego NPC, bo gracz go teraz atakuje (lub jest przez niego atakowany)
                 if isinstance(self, HostileNPC):
                     self.show_hp_bar = True
-
-            elif isinstance(target, NPC):  # NPC vs NPC
+            elif isinstance(target, NPC):
                 target.enter_combat_with(self)
 
     def leave_combat(self):
@@ -181,11 +172,9 @@ class Entity(pygame.sprite.Sprite):  #
         self.combat_target = None
 
         if self.is_alive:
-            if not (isinstance(self, HostileNPC) and hasattr(self, 'is_chasing') and self.is_chasing):
+            is_hostile_and_chasing = isinstance(self, HostileNPC) and hasattr(self, 'is_chasing') and self.is_chasing
+            if not is_hostile_and_chasing:
                 self.current_action = "idle"
-
-        if isinstance(self, HostileNPC) and self.is_alive:  # Pasek HP wrogiego NPC może pozostać widoczny
-            pass  # self.show_hp_bar = False # Można dodać timer zanikania paska HP
 
         if former_target and former_target.is_alive and former_target.combat_target == self:
             former_target.leave_combat()
@@ -196,7 +185,7 @@ class Entity(pygame.sprite.Sprite):  #
             return
 
         if not self.combat_target.is_alive:
-            print(f"[DEBUG] {self.name}'s combat target {self.combat_target.name} is dead. Leaving combat.")  # DEBUG
+            print(f"[DEBUG] {self.name}'s combat target {self.combat_target.name} is dead. Leaving combat.")
             self.leave_combat()
             return
 
@@ -209,7 +198,7 @@ class Entity(pygame.sprite.Sprite):  #
         attack_range = 1
 
         if distance_to_target <= attack_range:
-            if self.path and self.current_action == "walking":
+            if hasattr(self, 'path') and self.path and self.current_action == "walking":
                 self.path = []
                 print(f"[DEBUG] {self.name} reached melee range of {self.combat_target.name}, stopping path.")
 
@@ -218,21 +207,17 @@ class Entity(pygame.sprite.Sprite):  #
             if self.attack_cooldown_timer == 0.0:
                 self.attack(self.combat_target)
                 self.attack_cooldown_timer = self.attack_speed
-        else:  # Cel poza zasięgiem ataku
+        else:
             if self.current_action == "fighting":
-                self.current_action = "idle"  # Wróć do idle, AI/logika ruchu zdecyduje co dalej
+                self.current_action = "idle"
 
             if isinstance(self, Player):
-                if not self.path:
+                if not hasattr(self, 'path') or not self.path:
                     print(
                         f"[DEBUG] Player {self.name}: Combat target {self.combat_target.name} is out of range. Player needs to move or re-engage.")
             elif isinstance(self, HostileNPC):
-                # Logika ścigania dla HostileNPC jest w update_ai.
-                # update_ai powinno ustawić self.path, jeśli NPC ma ścigać.
-                if not self.path and hasattr(self, 'is_chasing') and self.is_chasing:  # Jeśli ściga, a nie ma ścieżki
-                    print(
-                        f"[DEBUG] HostileNPC {self.name} (in _handle_automatic_combat): Target out of range, AI should set path soon.")
-                    pass  # Pozwól update_ai ustawić ścieżkę
+                if not hasattr(self, 'path') or (not self.path and hasattr(self, 'is_chasing') and self.is_chasing):
+                    pass
 
     def interact(self, interactor: "Entity"):
         print(f"[DEBUG] Entity '{self.name}' generic interact by '{interactor.name}'")
@@ -241,7 +226,6 @@ class Entity(pygame.sprite.Sprite):  #
     def get_context_menu_options(self, interactor: "Entity") -> List[Dict[str, Any]]:
         options = []
         if self.is_alive:
-            # Opcja Attack jest dodawana w HostileNPC.get_context_menu_options
             options.append({
                 "text": f"Examine {self.name}",
                 "action": lambda ignored_target: self.game.show_examine_text(self),
@@ -255,15 +239,17 @@ class Entity(pygame.sprite.Sprite):  #
             return
 
         self._handle_automatic_combat(dt)
-        # Logika ruchu i AI specyficzna dla klas pochodnych będzie w ich metodach update/update_ai
         pass
 
 
 class Player(Entity):
-    def __init__(self, game: "Game", name: str, ix: int, iy: int, image: pygame.Surface,
-                 level: int = 1, max_hp: int = 100, attack_power: int = 10, defense: int = 2,
-                 attack_speed: float = 1.0):
-        super().__init__(game, name, ix, iy, image, level, max_hp, attack_power, defense, attack_speed)
+    def __init__(self, game: "Game", name: str, ix: int, iy: int,
+                 image: pygame.Surface,  # Oczekuje pojedynczego obrazka
+                 entity_id: str,
+                 level: int = 1, max_hp: int = 100, attack_power: int = 10,
+                 defense: int = 2, attack_speed: float = 1.0):
+        super().__init__(game, name, ix, iy, image, entity_id, level, max_hp,
+                         attack_power, defense, attack_speed)
         self.move_cooldown_max = 0.15
         self.move_cooldown = 0.0
         self.path: list[tuple[int, int]] = []
@@ -291,22 +277,18 @@ class Player(Entity):
             self.target_tile_coords = (tx, ty)
             if self.path:
                 self.current_action = "walking"
-                # Jeśli zaczynamy iść, a byliśmy w walce (i nie idziemy do celu walki)
-                if self.in_combat and self.current_action == "fighting":  # Poprzedni stan mógł być fighting
+                if self.in_combat and self.current_action == "fighting":
                     is_moving_to_combat_target = False
                     if self.combat_target and self.path:
-                        # Sprawdź czy ostatni punkt ścieżki to cel walki
                         path_target_x, path_target_y = self.path[-1]
                         if path_target_x == self.combat_target.ix and path_target_y == self.combat_target.iy:
                             is_moving_to_combat_target = True
-
                     if not is_moving_to_combat_target:
                         print(f"[DEBUG] Player {self.name} started walking (not to combat target), leaving combat.")
                         self.leave_combat()
-            else:  # Ścieżka pusta
+            else:
                 self.current_action = "idle"
                 self.target_tile_coords = None
-                # Jeśli była akcja (np. Talk), a ścieżka od razu pusta (np. cel obok)
                 if self.action_after_reaching_target:
                     print("[DEBUG] Player.set_path: Path is empty, but action was queued. Attempting immediate action.")
                     action_to_run = self.action_after_reaching_target
@@ -335,21 +317,17 @@ class Player(Entity):
             if self.in_combat and self.combat_target == target_npc: self.leave_combat()
             return
 
-        # Jeśli już walczymy z tym celem, nie rób nic (chyba że chcemy np. wymusić podejście)
         if self.in_combat and self.combat_target == target_npc:
             print(f"[DEBUG] Player {self.name} already in combat with {target_npc.name}.")
-            # Sprawdź dystans, jeśli za daleko, podejdź
             distance_to_target = max(abs(self.ix - target_npc.ix), abs(self.iy - target_npc.iy))
-            if distance_to_target > 1 and not self.path:  # Jeśli nie idzie, a jest za daleko
+            if distance_to_target > 1 and not self.path:
                 self.path = bresenham(self.ix, self.iy, target_npc.ix, target_npc.iy)
                 if self.path: self.current_action = "walking"; self.target_tile_coords = (target_npc.ix, target_npc.iy)
             return
 
         print(f"[DEBUG] Player {self.name} is initiating attack sequence on {target_npc.name} via walk_and_act.")
-        # Użyj player_walk_to_and_act, aby gracz podszedł, a PO DOJŚCIU wszedł w walkę.
         self.game.player_walk_to_and_act(
             (target_npc.ix, target_npc.iy),
-            # Akcja do wykonania po dojściu: wejdź w walkę
             lambda npc_to_engage: self.enter_combat_with(npc_to_engage),
             target_npc
         )
@@ -401,8 +379,6 @@ class Player(Entity):
                 if self.in_combat:
                     print(f"[DEBUG] Player {self.name}: Path to combat target leads out of map. Leaving combat.")
                     self.leave_combat()
-
-                    # TODO: Kolizja z terenem
 
             if can_move and self.game.is_tile_occupied_by_entity(nx, ny, excluding_entity=self):
                 occupied_by_entity = None
@@ -478,10 +454,12 @@ class Player(Entity):
 
 class NPC(Entity):
     def __init__(self, game: "Game", name: str, ix: int, iy: int, image: pygame.Surface,
+                 entity_id: str,
                  level: int = 1, max_hp: int = 20, attack_power: int = 5, defense: int = 1,
                  movement_pattern: str = "stationary", dialogue: Optional[list[str]] = None,
                  attack_speed: float = 2.0):
-        super().__init__(game, name, ix, iy, image, level, max_hp, attack_power, defense, attack_speed)
+        super().__init__(game, name, ix, iy, image, entity_id, level, max_hp,
+                         attack_power, defense, attack_speed)
         self.movement_pattern = movement_pattern
         self.dialogue = dialogue if dialogue else []
         self.patrol_points: list[tuple[int, int]] = []
@@ -562,23 +540,28 @@ class NPC(Entity):
 
 class FriendlyNPC(NPC):
     def __init__(self, game: "Game", name: str, ix: int, iy: int, image: pygame.Surface,
-                 level: int = 1, max_hp: int = 30, dialogue: Optional[list[str]] = None):
-        super().__init__(game, name, ix, iy, image, level, max_hp, attack_power=0, defense=0,
-                         movement_pattern="stationary", dialogue=dialogue, attack_speed=9999)
+                 entity_id: str,
+                 level: int = 1, max_hp: int = 30, dialogue: Optional[list[str]] = None,
+                 attack_speed: float = 9999):
+        super().__init__(game, name, ix, iy, image, entity_id, level, max_hp,
+                         attack_power=0, defense=0,
+                         movement_pattern="stationary", dialogue=dialogue,
+                         attack_speed=attack_speed)
 
     def interact(self, interactor: "Entity"):
         print(f"[DEBUG] FriendlyNPC '{self.name}' interact called by '{interactor.name}'")
         if isinstance(interactor, Player):
-            if interactor.path: interactor.path = []
+            if hasattr(interactor, 'path') and interactor.path: interactor.path = []  # Zatrzymaj gracza
             interactor.current_action = "idle"
 
             if self.dialogue:
                 print(f"[DEBUG] FriendlyNPC '{self.name}' has dialogue. Calling self.game.ui.show_dialogue.")
-                self.game.ui.show_dialogue(self.name, self.dialogue)
+                if hasattr(self.game, 'ui') and self.game.ui: self.game.ui.show_dialogue(self.name, self.dialogue)
             else:
                 print(
                     f"[DEBUG] FriendlyNPC '{self.name}' has NO dialogue. Calling self.game.ui.show_dialogue with default.")
-                self.game.ui.show_dialogue(self.name, [f"Witaj, {interactor.name}!"])
+                if hasattr(self.game, 'ui') and self.game.ui: self.game.ui.show_dialogue(self.name,
+                                                                                         [f"Witaj, {interactor.name}!"])
         else:
             super().interact(interactor)
 
@@ -599,11 +582,13 @@ class FriendlyNPC(NPC):
 
 class HostileNPC(NPC):
     def __init__(self, game: "Game", name: str, ix: int, iy: int, image: pygame.Surface,
+                 entity_id: str,
                  level: int = 1, max_hp: int = 50, attack_power: int = 8, defense: int = 3,
                  aggro_radius: int = 5,
                  attack_speed: float = 1.8):
-        super().__init__(game, name, ix, iy, image, level, max_hp, attack_power, defense,
-                         movement_pattern="stationary", dialogue=None, attack_speed=attack_speed)
+        super().__init__(game, name, ix, iy, image, entity_id, level, max_hp,
+                         attack_power, defense, movement_pattern="stationary",
+                         dialogue=None, attack_speed=attack_speed)
         self.aggro_radius = aggro_radius
         self.attack_cooldown_timer = self.attack_speed
         self.is_chasing = False
@@ -623,38 +608,33 @@ class HostileNPC(NPC):
     def update_ai(self, dt: float, tilemap: "TileMap", player: Player, all_entities: pygame.sprite.Group):
         if not self.is_alive: return
 
-        # Jeśli NPC jest w walce i w zasięgu, _handle_automatic_combat zajmie się atakiem.
-        # AI tutaj decyduje o ściganiu/powrocie, jeśli nie jest w bezpośrednim zwarciu.
         if self.in_combat and self.combat_target == player:
             distance_to_player = max(abs(self.ix - player.ix), abs(self.iy - player.iy))
             if distance_to_player <= 1:
-                if self.path: self.path = []
+                if hasattr(self, 'path') and self.path: self.path = []
                 self.current_action = "fighting"
                 return
-            else:  # Cel walki jest poza zasięgiem, ścigaj
-                # Aktualizuj ścieżkę, jeśli gracz się ruszył, NPC nie ma ścieżki, lub ścieżka nie prowadzi do gracza
-                if not self.path or (self.path and (player.ix, player.iy) != self.path[-1]):
-                    print(
-                        f"[DEBUG] HostileNPC {self.name} (AI): Combat target {player.name} out of melee, recalculating path.")
+            else:
+                if not hasattr(self, 'path') or not self.path or (
+                        self.path and (player.ix, player.iy) != self.path[-1]):
+                    # print(f"[DEBUG] HostileNPC {self.name} (AI): Combat target {player.name} out of melee, recalculating path.")
                     self.path = bresenham(self.ix, self.iy, player.ix, player.iy)
                     if self.path:
                         self.current_action = "walking"
                     else:
-                        self.current_action = "fighting"  # Nie można dojść, ale wciąż w walce
+                        self.current_action = "fighting"
                 return
 
-                # Logika poza walką (np. gracz umarł) lub gdy cel walki zniknął
         if not player.is_alive:
             if self.is_chasing or self.in_combat: self.leave_combat()
             self.is_chasing = False;
-            if not self.path and (self.ix != self.start_ix or self.iy != self.start_iy):
+            if not hasattr(self, 'path') or (not self.path and (self.ix != self.start_ix or self.iy != self.start_iy)):
                 self.path = bresenham(self.ix, self.iy, self.start_ix, self.start_iy)
             self.current_action = "idle" if not self.path else "walking"
             return
 
         distance_to_player = max(abs(self.ix - player.ix), abs(self.iy - player.iy))
 
-        # Rozpoczęcie ścigania i walki, jeśli gracz wszedł w zasięg aggro
         if not self.in_combat and distance_to_player <= self.aggro_radius and player.is_alive:
             print(f"[DEBUG] HostileNPC {self.name} spots {player.name} and enters combat (AI)!")
             self.enter_combat_with(player)
@@ -666,18 +646,16 @@ class HostileNPC(NPC):
                     self.current_action = "fighting"
             return
 
-            # Utrata celu pościgu, jeśli gracz za daleko (tylko jeśli is_chasing)
         elif self.is_chasing and distance_to_player > self.aggro_radius * 2:
             print(f"[DEBUG] HostileNPC {self.name}: Player {player.name} escaped chase.")
             if self.in_combat and self.combat_target == player: self.leave_combat()
             self.is_chasing = False
-            if not self.path and (self.ix != self.start_ix or self.iy != self.start_iy):
+            if not hasattr(self, 'path') or (not self.path and (self.ix != self.start_ix or self.iy != self.start_iy)):
                 self.path = bresenham(self.ix, self.iy, self.start_ix, self.start_iy)
             self.current_action = "idle" if not self.path else "walking"
 
-        # Powrót na pozycję startową, jeśli nie ściga, nie walczy i nie jest na miejscu
         if not self.in_combat and not self.is_chasing and self.movement_pattern == "stationary" and \
-                (self.ix != self.start_ix or self.iy != self.start_iy) and not self.path:
+                (self.ix != self.start_ix or self.iy != self.start_iy) and (not hasattr(self, 'path') or not self.path):
             self.path = bresenham(self.ix, self.iy, self.start_ix, self.start_iy)
             if self.path:
                 self.current_action = "walking"

@@ -3,16 +3,15 @@ import pygame
 from rsc_engine.states import BaseState, PlayerData
 from rsc_engine import constants as C
 
-# Importuj klasy gry potrzebne dla GameplayState
 from rsc_engine.camera import Camera
 from rsc_engine.tilemap import TileMap
-from rsc_engine.entity import Player, FriendlyNPC, HostileNPC  # Usunięto Entity, jeśli nie jest bezpośrednio tworzone
-from rsc_engine.ui import UI, ContextMenu  # DamageSplat jest używane przez Game.create_damage_splat
+from rsc_engine.entity import Player, FriendlyNPC, HostileNPC
+from rsc_engine.ui import UI, ContextMenu
 from rsc_engine.inventory import Inventory, Item
 from rsc_engine.utils import screen_to_iso, iso_to_screen
-
-# Importuj inne potrzebne rzeczy z typing
-from typing import Tuple, Callable, Optional, List, Any
+import json
+from typing import Tuple, Callable, Optional, List, Any, Dict
+from pathlib import Path  # Upewnij się, że Path jest zaimportowane
 
 
 class MenuState(BaseState):
@@ -20,7 +19,7 @@ class MenuState(BaseState):
         super().__init__(game)
         self.font_large = pygame.font.SysFont("Consolas", 56, bold=True)
         self.font_buttons = pygame.font.SysFont("Consolas", 36)
-        self.options = ["New Game", "Load Game", "Options (N/A)", "Quit"]  # Zmieniono "Load Game (N/A)"
+        self.options = ["New Game", "Load Game", "Options (N/A)", "Quit"]
         self.buttons: List[Tuple[Optional[pygame.Surface], pygame.Rect, str]] = []
         self.selected_option_index = 0
 
@@ -52,7 +51,7 @@ class MenuState(BaseState):
             )
             self.buttons.append((None, button_rect, option_text))
 
-    def handle_events(self, events: list[pygame.event.Event]):
+    def handle_events(self, events: list[pygame.event.Event]):  # <<< POPRAWIONA METODA
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP:
@@ -68,21 +67,24 @@ class MenuState(BaseState):
                     if rect.collidepoint(scaled_mouse_pos):
                         self.selected_option_index = i
                         self._select_current_option()
-                        break
+                        return  # Kliknięcie obsłużone
             elif event.type == pygame.MOUSEMOTION:
                 scaled_mouse_pos = self.game.get_scaled_mouse_pos(event.pos)
                 for i, (_, rect, _) in enumerate(self.buttons):
                     if rect.collidepoint(scaled_mouse_pos):
-                        self.selected_option_index = i
-                        break
+                        if self.selected_option_index != i:  # Aktualizuj tylko jeśli się zmieniło
+                            self.selected_option_index = i
+                        break  # Wystarczy znaleźć pierwszy pasujący
 
     def _select_current_option(self):
         selected_action = self.options[self.selected_option_index]
         print(f"[DEBUG] MenuState: Selected '{selected_action}'")
         if selected_action == "New Game":
             self.game.state_manager.set_state("CHARACTER_CREATION")
-        elif selected_action == "Load Game":  # Poprawiona akcja
+        elif selected_action == "Load Game":
             print("[DEBUG] MenuState: Transitioning to LOAD_GAME state.")
+            if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game'):
+                self.game.state_manager.previous_active_state_key_for_load_game = "MENU"
             self.game.state_manager.set_state("LOAD_GAME")
         elif selected_action == "Options (N/A)":
             print("Options - Not implemented yet")
@@ -162,7 +164,7 @@ class CharacterCreationState(BaseState):
         self.player_name = "Hero"
         self.active_input = True
 
-    def handle_events(self, events: list[pygame.event.Event]):
+    def handle_events(self, events: list[pygame.event.Event]):  # <<< POPRAWIONA METODA
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if self.active_input:
@@ -179,7 +181,7 @@ class CharacterCreationState(BaseState):
                     self.active_input = True
                 elif self.start_button_rect.collidepoint(scaled_mouse_pos):
                     self._start_game()
-                else:
+                else:  # Kliknięcie poza polem tekstowym i przyciskiem
                     self.active_input = False
 
     def _start_game(self):
@@ -228,6 +230,8 @@ class CharacterCreationState(BaseState):
 
 
 class GameplayState(BaseState):
+    # ... (kod GameplayState.on_enter, update, draw, handle_events bez zmian z ostatniej pełnej wersji) ...
+    # Poniżej skrócone, ale upewnij się, że masz PEŁNY kod z ostatniej odpowiedzi
     def __init__(self, game: "Game"):
         super().__init__(game)
         self.player: Optional[Player] = None
@@ -239,80 +243,129 @@ class GameplayState(BaseState):
         self.inventory: Optional[Inventory] = None
         print("[DEBUG] GameplayState initialized (attributes will be set in on_enter)")
 
-    def on_enter(self, player_data: Optional[PlayerData] = None):
-        super().on_enter(player_data)
-
-        current_player_data = player_data
-        if current_player_data is None:
+    def on_enter(self, loaded_game_or_player_data: Optional[Any] = None):
+        super().on_enter(loaded_game_or_player_data)
+        current_player_data: Optional[PlayerData] = None
+        loaded_npc_states: Optional[List[Dict[str, Any]]] = None
+        current_map_id = "default_map"
+        if isinstance(loaded_game_or_player_data, PlayerData):
+            current_player_data = loaded_game_or_player_data
+        elif isinstance(loaded_game_or_player_data, dict) and "player_data" in loaded_game_or_player_data:
+            current_player_data = PlayerData.from_dict(loaded_game_or_player_data["player_data"])
+            loaded_npc_states = loaded_game_or_player_data.get("npc_states", [])
+            current_map_id = loaded_game_or_player_data.get("current_map_id", current_map_id)
+        else:
             current_player_data = PlayerData(name="DefaultPlayer")
-            print(f"[WARNING] GameplayState entered without player_data, using fallback: {current_player_data}")
-
         self.game._load_damage_splat_assets_global()
-
         tileset_img = self.game._load_image("tileset.png")
         map_path = C.ASSETS / "map.csv"
         self.tilemap = TileMap(str(map_path), tileset_img)
+        if hasattr(self.tilemap, 'id'): self.tilemap.id = current_map_id
         self.game.tilemap = self.tilemap
-
         self.camera = Camera(C.SCREEN_WIDTH, C.SCREEN_HEIGHT)
-        if self.tilemap:
-            self.camera.set_world_size(self.tilemap.width * C.TILE_WIDTH, self.tilemap.height * C.TILE_HEIGHT)
+        if self.tilemap: self.camera.set_world_size(self.tilemap.width * C.TILE_WIDTH,
+                                                    self.tilemap.height * C.TILE_HEIGHT)
         self.game.camera = self.camera
-
-        self.entities = pygame.sprite.Group()
+        self.entities = pygame.sprite.Group();
         self.game.entities = self.entities
-
         player_original_image = self.game._load_image("player.png")
         scaled_player_image = self.game._scale_image_proportionally(player_original_image, C.TARGET_CHAR_HEIGHT)
-
-        self.player = Player(
-            self.game,
-            name=current_player_data.name,
-            ix=current_player_data.start_ix,
-            iy=current_player_data.start_iy,
-            image=scaled_player_image,
-            max_hp=current_player_data.max_hp,  # Użyj danych z PlayerData
-            attack_power=15,  # Można to też przenieść do PlayerData
-            defense=5,  # Można to też przenieść do PlayerData
-            level=current_player_data.level,
-            attack_speed=1.0
-        )
-        self.player.hp = current_player_data.current_hp  # Ustaw aktualne HP
-
+        self.player = Player(self.game, name=current_player_data.name, ix=current_player_data.start_ix,
+                             iy=current_player_data.start_iy, image=scaled_player_image,
+                             entity_id=f"player_{current_player_data.name.lower().replace(' ', '_')}",
+                             max_hp=current_player_data.max_hp, attack_power=15, defense=5,
+                             level=current_player_data.level, attack_speed=1.0)
+        self.player.hp = current_player_data.current_hp
+        if hasattr(self.player, 'xp') and hasattr(current_player_data, 'xp'): self.player.xp = current_player_data.xp
         self.entities.add(self.player);
         self.game.player = self.player
-
-        try:
-            fn_img_orig = self.game._load_image("friendly_npc.png"); fn_img = self.game._scale_image_proportionally(
-                fn_img_orig, C.TARGET_CHAR_HEIGHT)
-        except pygame.error:
-            fn_img = pygame.Surface((C.TARGET_CHAR_HEIGHT, C.TARGET_CHAR_HEIGHT), pygame.SRCALPHA); fn_img.fill(
-                (0, 255, 0, 150))
-        friendly_npc = FriendlyNPC(self.game, "Old Man", 8, 8, fn_img,
-                                   dialogue=["Witaj w świecie gry!", "Miłej zabawy."]);
-        self.entities.add(friendly_npc)
-
-        try:
-            hn_img_orig = self.game._load_image("hostile_npc.png"); hn_img = self.game._scale_image_proportionally(
-                hn_img_orig, C.TARGET_CHAR_HEIGHT)
-        except pygame.error:
-            hn_img = pygame.Surface((C.TARGET_CHAR_HEIGHT, C.TARGET_CHAR_HEIGHT), pygame.SRCALPHA); hn_img.fill(
-                (255, 0, 0, 150))
-        goblin = HostileNPC(self.game, "Goblin Fighter", 12, 12, hn_img, max_hp=30, attack_speed=1.8);
-        self.entities.add(goblin)
-
+        def_fn_ix, def_fn_iy = 8, 8;
+        def_gn_ix, def_gn_iy = 12, 12
+        default_npc_definitions = {
+            f"friendly_oldman_{def_fn_ix}_{def_fn_iy}": {"type": FriendlyNPC, "name": "Old Man", "ix": def_fn_ix,
+                                                         "iy": def_fn_iy, "image_file": "friendly_npc.png",
+                                                         "dialogue": ["Witaj w GameplayState!", "To jest test."],
+                                                         "max_hp": 30, "attack_speed": 9999,
+                                                         "entity_id": f"friendly_oldman_{def_fn_ix}_{def_fn_iy}"},
+            f"hostile_goblin_{def_gn_ix}_{def_gn_iy}": {"type": HostileNPC, "name": "Goblin Scout", "ix": def_gn_ix,
+                                                        "iy": def_gn_iy, "image_file": "hostile_npc.png", "max_hp": 30,
+                                                        "attack_speed": 1.8, "level": 1, "attack_power": 5,
+                                                        "defense": 1, "aggro_radius": 5,
+                                                        "entity_id": f"hostile_goblin_{def_gn_ix}_{def_gn_iy}"}}
+        processed_npc_ids = set()
+        if loaded_npc_states:
+            for npc_data in loaded_npc_states:
+                entity_id = npc_data.get("entity_id");
+                if not entity_id: continue;
+                processed_npc_ids.add(entity_id);
+                npc_class_name = npc_data.get("type");
+                npc_class = None;
+                image_file_for_npc = "hostile_npc.png"
+                if npc_class_name == "FriendlyNPC":
+                    npc_class = FriendlyNPC; image_file_for_npc = "friendly_npc.png"
+                elif npc_class_name == "HostileNPC":
+                    npc_class = HostileNPC;
+                if npc_class and npc_data.get("is_alive", True):
+                    try:
+                        img_orig = self.game._load_image(
+                            image_file_for_npc); img = self.game._scale_image_proportionally(img_orig,
+                                                                                             C.TARGET_CHAR_HEIGHT)
+                    except:
+                        img = pygame.Surface((C.TARGET_CHAR_HEIGHT, C.TARGET_CHAR_HEIGHT), pygame.SRCALPHA); img.fill(
+                            (100, 100, 100, 150))
+                    npc_args = {"game": self.game, "name": npc_data.get("name"), "ix": npc_data.get("ix"),
+                                "iy": npc_data.get("iy"), "image": img, "entity_id": entity_id,
+                                "level": npc_data.get("level", 1), "max_hp": npc_data.get("max_hp"),
+                                "attack_speed": npc_data.get("attack_speed", 2.0)}
+                    if npc_class == FriendlyNPC:
+                        npc_args["dialogue"] = npc_data.get("dialogue")
+                    elif npc_class == HostileNPC:
+                        npc_args["attack_power"] = npc_data.get("attack_power", 5); npc_args["defense"] = npc_data.get(
+                            "defense", 1); npc_args["aggro_radius"] = npc_data.get("aggro_radius",
+                                                                                   default_npc_definitions.get(
+                                                                                       entity_id, {}).get(
+                                                                                       "aggro_radius", 5))
+                    npc_instance = npc_class(**npc_args);
+                    npc_instance.hp = npc_data.get("hp");
+                    npc_instance.is_alive = npc_data.get("is_alive", True)
+                    if isinstance(npc_instance, HostileNPC): npc_instance.show_hp_bar = npc_data.get("show_hp_bar",
+                                                                                                     False); npc_instance.is_chasing = npc_data.get(
+                        "is_chasing", False); npc_instance.start_ix, npc_instance.start_iy = npc_data.get(
+                        "ix"), npc_data.get("iy")
+                    if npc_instance.is_alive: self.entities.add(npc_instance)
+        for entity_id, def_data in default_npc_definitions.items():
+            if entity_id not in processed_npc_ids:
+                npc_class = def_data["type"]
+                try:
+                    img_orig = self.game._load_image(
+                        def_data["image_file"]); img = self.game._scale_image_proportionally(img_orig,
+                                                                                             C.TARGET_CHAR_HEIGHT)
+                except:
+                    img = pygame.Surface((C.TARGET_CHAR_HEIGHT, C.TARGET_CHAR_HEIGHT), pygame.SRCALPHA); img.fill(
+                        (100, 100, 100, 150))
+                npc_args = {"game": self.game, "name": def_data["name"], "ix": def_data["ix"], "iy": def_data["iy"],
+                            "image": img, "entity_id": entity_id, "level": def_data.get("level", 1),
+                            "max_hp": def_data["max_hp"], "attack_speed": def_data.get("attack_speed", 2.0)}
+                if npc_class == FriendlyNPC:
+                    npc_args["dialogue"] = def_data.get("dialogue")
+                elif npc_class == HostileNPC:
+                    npc_args["attack_power"] = def_data.get("attack_power", 5); npc_args["defense"] = def_data.get(
+                        "defense", 1); npc_args["aggro_radius"] = def_data.get("aggro_radius", 5)
+                npc_instance = npc_class(**npc_args)
+                if isinstance(npc_instance, HostileNPC): npc_instance.start_ix, npc_instance.start_iy = def_data["ix"], \
+                def_data["iy"]
+                self.entities.add(npc_instance)
         self.ui = UI(self.game);
-        self.game.ui = self.ui
+        self.game.ui = self.ui;
         self.context_menu = ContextMenu(self.game);
-        self.game.context_menu = self.context_menu
+        self.game.context_menu = self.context_menu;
         self.inventory = Inventory(rows=4, cols=5);
         self.game.inventory = self.inventory
         icon_path = C.ASSETS / "item_icon.png";
         ico = pygame.Surface((32, 32), pygame.SRCALPHA);
         ico.fill((255, 215, 0, 200))
         if icon_path.exists(): ico_original = self.game._load_image("item_icon.png"); ico = ico_original
-        self.inventory.add_item(Item("Magic Stone", ico))
-
+        self.inventory.add_item(Item("Magic Stone", ico));
         self.game.damage_splats = []
 
     def handle_events(self, events: list[pygame.event.Event]):
@@ -321,8 +374,10 @@ class GameplayState(BaseState):
         for event in events:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 print("[DEBUG] Escape pressed in GameplayState, switching to PAUSE_MENU")
-                # Przekaż informację, skąd przyszliśmy, aby Pauza mogła wrócić
-                self.game.state_manager.set_state("PAUSE_MENU", {"previous_state": "GAMEPLAY"})
+                if hasattr(self.game.state_manager,
+                           'previous_active_state_key_for_load_game'):  # Upewnij się, że atrybut istnieje
+                    self.game.state_manager.previous_active_state_key_for_load_game = "GAMEPLAY"
+                self.game.state_manager.set_state("PAUSE_MENU")
                 return
 
             if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.MOUSEMOTION:
@@ -332,7 +387,7 @@ class GameplayState(BaseState):
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if mouse_pos_physical is None or scaled_mouse_pos_for_logic is None: continue
                 action_taken_by_ui_or_menu = False
-                if event.button == 1:
+                if event.button == 1:  # Lewy przycisk myszy
                     if self.ui and hasattr(self.ui, 'backpack_icon_rect') and self.ui.backpack_icon_rect.collidepoint(
                             scaled_mouse_pos_for_logic):
                         if hasattr(self.ui,
@@ -475,7 +530,21 @@ class GameplayState(BaseState):
 
     def on_exit(self):
         super().on_exit()
-        return None
+        if self.game.player and self.game.player.is_alive:
+            current_map_id = "default_map"
+            if self.tilemap and hasattr(self.tilemap, 'id'):
+                current_map_id = self.tilemap.id
+            elif self.tilemap and hasattr(self.tilemap, 'csv_path'):
+                current_map_id = Path(self.tilemap.csv_path).stem
+
+            # Zapisz dane gracza do `shared_game_data` na wypadek, gdyby PauseMenu chciało je zapisać
+            self.game.shared_game_data["player_data_on_pause"] = PlayerData(
+                name=self.game.player.name, level=self.game.player.level,
+                start_ix=self.game.player.ix, start_iy=self.game.player.iy,
+                max_hp=self.game.player.max_hp, current_hp=self.game.player.hp,
+                xp=getattr(self.game.player, 'xp', 0), map_id=current_map_id
+            )
+        return None  # Nie ma potrzeby przekazywać danych w ten sposób, jeśli używamy shared_game_data
 
 
 class PauseMenuState(BaseState):
@@ -514,10 +583,11 @@ class PauseMenuState(BaseState):
     def on_enter(self, previous_state_data=None):
         super().on_enter(previous_state_data)
         self.selected_option_index = 0
-        self.gameplay_snapshot = self.game.logical_screen.copy()  # Zapisz aktualny obraz gry
-        dim_surface = pygame.Surface(self.gameplay_snapshot.get_size(), pygame.SRCALPHA)
-        dim_surface.fill((0, 0, 0, 180))
-        self.gameplay_snapshot.blit(dim_surface, (0, 0))
+        if self.game.logical_screen:
+            self.gameplay_snapshot = self.game.logical_screen.copy()
+            dim_surface = pygame.Surface(self.gameplay_snapshot.get_size(), pygame.SRCALPHA)
+            dim_surface.fill((0, 0, 0, 180))
+            self.gameplay_snapshot.blit(dim_surface, (0, 0))
 
     def handle_events(self, events: list[pygame.event.Event]):
         for event in events:
@@ -549,10 +619,14 @@ class PauseMenuState(BaseState):
         if action == "Resume Game":
             self.game.state_manager.set_state("GAMEPLAY")
         elif action == "Save Game (Slot 1)":
-            self.game.save_game(1)
+            if self.game.player and self.game.tilemap:  # Upewnij się, że te referencje są dostępne w Game
+                self.game.save_game(1)
+            else:
+                print("[ERROR] PauseMenu: Cannot save, player or tilemap not found on game object!")
         elif action == "Load Game":
-            # Zapamiętaj, że przyszliśmy z pauzy, aby LoadGame mogło wrócić do pauzy
-            self.game.state_manager.previous_active_state_key_for_load_game = "PAUSE_MENU"
+            # Zapamiętaj, że przyszliśmy z pauzy, aby LoadGame mogło wrócić do pauzy (lub głównego menu)
+            if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game'):
+                self.game.state_manager.previous_active_state_key_for_load_game = "PAUSE_MENU"
             self.game.state_manager.set_state("LOAD_GAME")
         elif action == "Main Menu":
             self.game.state_manager.set_state("MENU")
@@ -564,7 +638,7 @@ class PauseMenuState(BaseState):
         if self.gameplay_snapshot:
             surface.blit(self.gameplay_snapshot, (0, 0))
         else:
-            surface.fill((10, 10, 20))
+            surface.fill((10, 10, 20, 180))
 
         title_surf = self.font_title.render("Game Paused", True, (230, 230, 250))
         title_rect = title_surf.get_rect(center=(C.SCREEN_WIDTH // 2, C.SCREEN_HEIGHT // 4))
@@ -575,7 +649,7 @@ class PauseMenuState(BaseState):
             btn_col = self.button_highlight_color if is_sel else self.button_color
             brd_col = self.border_highlight_color if is_sel else self.border_color
             txt_col = self.highlight_text_color if is_sel else self.text_color
-            brd_thk = 3 if is_sel else 2  # Grubsza ramka dla podświetlonego
+            brd_thk = 3 if is_sel else 2
             pygame.draw.rect(surface, btn_col, rect, border_radius=6)
             pygame.draw.rect(surface, brd_col, rect, brd_thk, border_radius=6)
             txt_surf = self.font_options.render(opt_text, True, txt_col)
@@ -649,12 +723,14 @@ class LoadGameState(BaseState):
                     if rect.collidepoint(scaled_mouse_pos): self.selected_slot_index = i; break
 
     def _go_back(self):
-        # Powrót do poprzedniego stanu, który wywołał LoadGameState (Menu Główne lub Menu Pauzy)
-        previous_state = "MENU"  # Domyślnie
+        previous_state = "MENU"
+        # Sprawdź, czy GameStateManager przechowuje informację o poprzednim stanie dla LoadGame
         if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game') and \
                 self.game.state_manager.previous_active_state_key_for_load_game:
             previous_state = self.game.state_manager.previous_active_state_key_for_load_game
-        print(f"[DEBUG] LoadGameState: Going back to {previous_state}")
+            print(f"[DEBUG] LoadGameState: Going back to stored previous state: {previous_state}")
+        else:
+            print(f"[DEBUG] LoadGameState: Going back to default: {previous_state}")
         self.game.state_manager.set_state(previous_state)
 
     def _load_selected_slot(self):
@@ -662,9 +738,20 @@ class LoadGameState(BaseState):
             slot_info = self.save_slots_info[self.selected_slot_index]
             if slot_info["exists"]:
                 print(f"[DEBUG] LoadGameState: Attempting to load slot {slot_info['slot']}")
-                player_data = self.game.load_game_data_from_slot(slot_info["slot"])
-                if player_data:
-                    self.game.state_manager.set_state("GAMEPLAY", player_data)
+                save_path = self.game.get_save_file_path(slot_info["slot"])
+                loaded_full_game_data = None
+                if save_path.exists():
+                    try:
+                        with open(save_path, 'r') as f:
+                            loaded_full_game_data = json.load(f)
+                    except Exception as e:
+                        print(f"[ERROR] Could not parse game data from slot {slot_info['slot']}: {e}")
+
+                if loaded_full_game_data and "player_data" in loaded_full_game_data:
+                    self.game.shared_game_data["current_save_slot"] = slot_info["slot"]
+                    self.game.state_manager.set_state("GAMEPLAY", loaded_full_game_data)
+                else:
+                    print(f"[ERROR] Failed to properly load full game data for slot {slot_info['slot']}")
             else:
                 print(f"[DEBUG] LoadGameState: Slot {slot_info['slot']} is empty, cannot load.")
 
@@ -695,7 +782,6 @@ class LoadGameState(BaseState):
             text_rect = text_surf.get_rect(midleft=(rect.left + 25, rect.centery))
             surface.blit(text_surf, text_rect)
 
-        # Przycisk Powrotu
         back_button_color = (80, 30, 30)
         back_border_color = (120, 70, 70)
         scaled_mouse_pos = self.game.get_scaled_mouse_pos(pygame.mouse.get_pos())
@@ -710,6 +796,5 @@ class LoadGameState(BaseState):
 
     def on_exit(self):
         super().on_exit()
-        # Wyczyść zapamiętany poprzedni stan, jeśli istniał
         if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game'):
             self.game.state_manager.previous_active_state_key_for_load_game = None

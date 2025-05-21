@@ -110,11 +110,38 @@ class Game:
             xp=getattr(self.player, 'xp', 0),
             map_id=current_map_id
         )
+        npc_states = []
+        if self.entities:  # Upewnij się, że self.entities (z GameplayState) jest dostępne
+            for entity in self.entities:
+                if isinstance(entity, (FriendlyNPC, HostileNPC)):  # Zapisuj tylko NPC
+                    if not hasattr(entity, 'entity_id'):
+                        print(f"[WARNING] NPC {entity.name} ma no entity_id, skipping save for this NPC.")
+                        continue
 
+                    npc_data = {
+                        "entity_id": entity.entity_id,
+                        "name": entity.name,  # Można pominąć, jeśli ID wystarczy do odtworzenia
+                        "ix": entity.ix,
+                        "iy": entity.iy,
+                        "hp": entity.hp,
+                        "max_hp": entity.max_hp,  # Dla referencji lub jeśli może się zmieniać
+                        "is_alive": entity.is_alive,
+                        "level": entity.level,  # Jeśli NPC mają poziomy
+                        # Możesz dodać więcej specyficznych danych, np. czy jest 'is_chasing' dla HostileNPC
+                        "type": entity.__class__.__name__  # np. "HostileNPC", "FriendlyNPC"
+                    }
+                    # Jeśli to HostileNPC, zapisz jego show_hp_bar
+                    if isinstance(entity, HostileNPC):
+                        npc_data["show_hp_bar"] = entity.show_hp_bar
+                        npc_data["is_chasing"] = entity.is_chasing  # Można zapisać stan AI
+
+                    npc_states.append(npc_data)
         game_state_to_save = {
             "player_data": player_data_to_save.to_dict(),
+            "npc_states": npc_states,  # <<< DODAJ npc_states DO ZAPISU
+            "current_map_id": getattr(self.tilemap, 'id', player_data_to_save.map_id),  # Zapisz ID aktualnej mapy
             "timestamp": pygame.time.get_ticks(),
-            "game_version": "0.1"
+            "game_version": "0.1.1"  # Zwiększ wersję, jeśli format zapisu się zmienia
         }
 
         save_path = self.get_save_file_path(slot_number)

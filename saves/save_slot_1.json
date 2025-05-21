@@ -1,14 +1,41 @@
 {
     "player_data": {
-        "name": "Hero",
+        "name": "Heros",
         "level": 1,
-        "start_ix": 13,
-        "start_iy": 23,
+        "start_ix": 12,
+        "start_iy": 8,
         "max_hp": 100,
-        "current_hp": 88,
+        "current_hp": 100,
         "xp": 0,
         "map_id": "map"
     },
-    "timestamp": 8366,
-    "game_version": "0.1"
+    "npc_states": [
+        {
+            "entity_id": "friendly_oldman_8_8",
+            "name": "Old Man",
+            "ix": 8,
+            "iy": 8,
+            "hp": 30,
+            "max_hp": 30,
+            "is_alive": true,
+            "level": 1,
+            "type": "FriendlyNPC"
+        },
+        {
+            "entity_id": "hostile_goblin_12_12",
+            "name": "Goblin Scout",
+            "ix": 12,
+            "iy": 9,
+            "hp": 0,
+            "max_hp": 30,
+            "is_alive": false,
+            "level": 1,
+            "type": "HostileNPC",
+            "show_hp_bar": false,
+            "is_chasing": false
+        }
+    ],
+    "current_map_id": "map",
+    "timestamp": 32950,
+    "game_version": "0.1.1"
 }
