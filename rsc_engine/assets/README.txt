@@ -1,0 +1,1 @@
+Placeholder assets generated automatically.
