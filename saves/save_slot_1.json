@@ -2,13 +2,13 @@
     "player_data": {
         "name": "Hero",
         "level": 1,
-        "start_ix": 2,
-        "start_iy": 31,
+        "start_ix": 13,
+        "start_iy": 23,
         "max_hp": 100,
-        "current_hp": 100,
+        "current_hp": 88,
         "xp": 0,
         "map_id": "map"
     },
-    "timestamp": 24003,
+    "timestamp": 8366,
     "game_version": "0.1"
 }

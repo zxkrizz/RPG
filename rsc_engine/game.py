@@ -192,34 +192,34 @@ class Game:
             scaled_surface = pygame.transform.scale(self.logical_screen, self.window_screen.get_size())
             self.window_screen.blit(scaled_surface, (0, 0))
 
+            # Rysuj ContextMenu na window_screen tylko jeśli jest aktywne i należy do GameplayState
+            # (Zakładamy, że self.context_menu jest ustawiane w Game przez GameplayState.on_enter)
             if self.state_manager.active_state_key == "GAMEPLAY" and \
-                    self.context_menu and self.context_menu.is_visible:
+                    self.context_menu and self.context_menu.is_visible:  # Dodano sprawdzenie self.context_menu
                 self.context_menu.draw(self.window_screen)
+
             pygame.display.flip()
         pygame.quit()
 
-    # Metody _process_events, _update, _draw są teraz PUSTE w Game,
-    # ponieważ ich logika została przeniesiona do odpowiednich stanów (głównie GameplayState)
-    # i jest wywoływana przez GameStateManager.
     def _process_events(self):
         pass
 
     def _update(self, dt: float):
         pass
 
-    def _draw(self):
+    def _draw(
+            self):  # Ta metoda jest teraz PUSTA, bo całe rysowanie odbywa się w GameplayState.draw() i potem jest skalowane
         pass
 
-    # Metody pomocnicze, które mogą być używane przez stany (przez self.game.metoda())
     def get_scaled_mouse_pos(self, physical_mouse_pos: Tuple[int, int]) -> Tuple[int, int]:
         window_w, window_h = self.window_screen.get_size()
         logical_w, logical_h = self.logical_screen.get_size()
-        if window_w > 0 and window_h > 0:  # Unikaj dzielenia przez zero
+        if window_w > 0 and window_h > 0:
             mouse_scale_x = logical_w / window_w
             mouse_scale_y = logical_h / window_h
             return (int(physical_mouse_pos[0] * mouse_scale_x),
                     int(physical_mouse_pos[1] * mouse_scale_y))
-        return physical_mouse_pos  # Fallback
+        return physical_mouse_pos
 
     def _load_image(self, name: str) -> pygame.Surface:
         return pygame.image.load(str(C.ASSETS / name)).convert_alpha()
@@ -270,7 +270,6 @@ class Game:
     def player_walk_to_and_act(self, target_coords_iso: Tuple[int, int], final_action: Callable,
                                action_target: Optional[Entity] = None):
         if not self.player or not self.player.is_alive: return
-        # player jest teraz atrybutem GameplayState, ale Game ma do niego referencję
         self.player.target_entity_for_action = action_target
         self.player.action_after_reaching_target = final_action
         if self.tilemap:

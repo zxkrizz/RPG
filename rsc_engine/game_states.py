@@ -3,15 +3,16 @@ import pygame
 from rsc_engine.states import BaseState, PlayerData
 from rsc_engine import constants as C
 
-# Importy potrzebne tylko dla GameplayState, jeśli inne stany ich nie używają bezpośrednio
+# Importuj klasy gry potrzebne dla GameplayState
 from rsc_engine.camera import Camera
 from rsc_engine.tilemap import TileMap
-from rsc_engine.entity import Player, FriendlyNPC, HostileNPC
-from rsc_engine.ui import UI, ContextMenu
+from rsc_engine.entity import Player, FriendlyNPC, HostileNPC  # Usunięto Entity, jeśli nie jest bezpośrednio tworzone
+from rsc_engine.ui import UI, ContextMenu  # DamageSplat jest używane przez Game.create_damage_splat
 from rsc_engine.inventory import Inventory, Item
 from rsc_engine.utils import screen_to_iso, iso_to_screen
 
-from typing import Tuple, Callable, Optional, List, Any, Dict
+# Importuj inne potrzebne rzeczy z typing
+from typing import Tuple, Callable, Optional, List, Any
 
 
 class MenuState(BaseState):
@@ -19,9 +20,7 @@ class MenuState(BaseState):
         super().__init__(game)
         self.font_large = pygame.font.SysFont("Consolas", 56, bold=True)
         self.font_buttons = pygame.font.SysFont("Consolas", 36)
-        # VVV ZMIANA TEKSTU OPCJI VVV
-        self.options = ["New Game", "Load Game", "Options (N/A)", "Quit"]
-        # ^^^ ZMIANA TEKSTU OPCJI ^^^
+        self.options = ["New Game", "Load Game", "Options (N/A)", "Quit"]  # Zmieniono "Load Game (N/A)"
         self.buttons: List[Tuple[Optional[pygame.Surface], pygame.Rect, str]] = []
         self.selected_option_index = 0
 
@@ -82,11 +81,9 @@ class MenuState(BaseState):
         print(f"[DEBUG] MenuState: Selected '{selected_action}'")
         if selected_action == "New Game":
             self.game.state_manager.set_state("CHARACTER_CREATION")
-        # VVV ZMIANA AKCJI DLA "Load Game" VVV
-        elif selected_action == "Load Game":
+        elif selected_action == "Load Game":  # Poprawiona akcja
             print("[DEBUG] MenuState: Transitioning to LOAD_GAME state.")
             self.game.state_manager.set_state("LOAD_GAME")
-            # ^^^ ZMIANA AKCJI DLA "Load Game" ^^^
         elif selected_action == "Options (N/A)":
             print("Options - Not implemented yet")
         elif selected_action == "Quit":
@@ -95,7 +92,7 @@ class MenuState(BaseState):
     def update(self, dt: float):
         pass
 
-    def draw(self, surface: pygame.Surface):  # surface to logical_screen
+    def draw(self, surface: pygame.Surface):
         surface.fill((25, 20, 35))
 
         caption_text = "RSC Clone Adventure"
@@ -103,8 +100,7 @@ class MenuState(BaseState):
         title_rect = title_surf.get_rect(center=(C.SCREEN_WIDTH // 2, C.SCREEN_HEIGHT // 4 - 30))
         surface.blit(title_surf, title_rect)
 
-        for i, (_, rect, option_text) in enumerate(
-                self.buttons):  # Zakładamy, że self.buttons przechowuje (None, rect, text)
+        for i, (_, rect, option_text) in enumerate(self.buttons):
             is_selected = (i == self.selected_option_index)
 
             current_button_color = self.button_highlight_color if is_selected else self.button_color
@@ -115,7 +111,6 @@ class MenuState(BaseState):
             pygame.draw.rect(surface, current_button_color, rect, border_radius=8)
             pygame.draw.rect(surface, current_border_color, rect, border_thickness, border_radius=8)
 
-            # Renderuj tekst przycisku dynamicznie w draw
             text_surf = self.font_buttons.render(option_text, True, current_text_color)
             text_rect = text_surf.get_rect(center=rect.center)
             surface.blit(text_surf, text_rect)
@@ -175,8 +170,6 @@ class CharacterCreationState(BaseState):
                         self._start_game()
                     elif event.key == pygame.K_BACKSPACE:
                         self.player_name = self.player_name[:-1]
-                    # Sprawdź, czy wprowadzony znak jest drukowalny (np. litery, cyfry, znaki specjalne)
-                    # i czy jest to pojedynczy znak (unikaj np. Shift, Ctrl)
                     elif event.unicode.isprintable() and len(event.unicode) == 1:
                         if len(self.player_name) < 15:
                             self.player_name += event.unicode
@@ -235,11 +228,6 @@ class CharacterCreationState(BaseState):
 
 
 class GameplayState(BaseState):
-    # ... (kod GameplayState pozostaje taki sam jak w ostatniej pełnej wersji) ...
-    # Upewnij się, że metoda handle_events w GameplayState jest kompletna
-    # i zawiera logikę sprawdzania kliknięć ikon UI, menu kontekstowego, dialogu,
-    # a na końcu standardową obsługę kliknięć na mapie/encjach.
-    # Najważniejsze, aby miała: `if self.ui and hasattr(self.ui, 'backpack_icon_rect')...` itp.
     def __init__(self, game: "Game"):
         super().__init__(game)
         self.player: Optional[Player] = None
@@ -252,28 +240,48 @@ class GameplayState(BaseState):
         print("[DEBUG] GameplayState initialized (attributes will be set in on_enter)")
 
     def on_enter(self, player_data: Optional[PlayerData] = None):
-        # ... (pełny kod on_enter z ostatniej wersji game_states.py) ...
         super().on_enter(player_data)
-        current_player_data = player_data if player_data else PlayerData(name="DefaultPlayer")
-        # Inicjalizacja obiektów gry
+
+        current_player_data = player_data
+        if current_player_data is None:
+            current_player_data = PlayerData(name="DefaultPlayer")
+            print(f"[WARNING] GameplayState entered without player_data, using fallback: {current_player_data}")
+
         self.game._load_damage_splat_assets_global()
+
         tileset_img = self.game._load_image("tileset.png")
         map_path = C.ASSETS / "map.csv"
         self.tilemap = TileMap(str(map_path), tileset_img)
         self.game.tilemap = self.tilemap
+
         self.camera = Camera(C.SCREEN_WIDTH, C.SCREEN_HEIGHT)
-        if self.tilemap: self.camera.set_world_size(self.tilemap.width * C.TILE_WIDTH,
-                                                    self.tilemap.height * C.TILE_HEIGHT)
+        if self.tilemap:
+            self.camera.set_world_size(self.tilemap.width * C.TILE_WIDTH, self.tilemap.height * C.TILE_HEIGHT)
         self.game.camera = self.camera
+
         self.entities = pygame.sprite.Group()
         self.game.entities = self.entities
+
         player_original_image = self.game._load_image("player.png")
         scaled_player_image = self.game._scale_image_proportionally(player_original_image, C.TARGET_CHAR_HEIGHT)
-        self.player = Player(self.game, name=current_player_data.name, ix=current_player_data.start_ix,
-                             iy=current_player_data.start_iy, image=scaled_player_image, max_hp=100, attack_power=15,
-                             defense=5, level=current_player_data.level, attack_speed=1.0)
+
+        self.player = Player(
+            self.game,
+            name=current_player_data.name,
+            ix=current_player_data.start_ix,
+            iy=current_player_data.start_iy,
+            image=scaled_player_image,
+            max_hp=current_player_data.max_hp,  # Użyj danych z PlayerData
+            attack_power=15,  # Można to też przenieść do PlayerData
+            defense=5,  # Można to też przenieść do PlayerData
+            level=current_player_data.level,
+            attack_speed=1.0
+        )
+        self.player.hp = current_player_data.current_hp  # Ustaw aktualne HP
+
         self.entities.add(self.player);
         self.game.player = self.player
+
         try:
             fn_img_orig = self.game._load_image("friendly_npc.png"); fn_img = self.game._scale_image_proportionally(
                 fn_img_orig, C.TARGET_CHAR_HEIGHT)
@@ -283,6 +291,7 @@ class GameplayState(BaseState):
         friendly_npc = FriendlyNPC(self.game, "Old Man", 8, 8, fn_img,
                                    dialogue=["Witaj w świecie gry!", "Miłej zabawy."]);
         self.entities.add(friendly_npc)
+
         try:
             hn_img_orig = self.game._load_image("hostile_npc.png"); hn_img = self.game._scale_image_proportionally(
                 hn_img_orig, C.TARGET_CHAR_HEIGHT)
@@ -291,6 +300,7 @@ class GameplayState(BaseState):
                 (255, 0, 0, 150))
         goblin = HostileNPC(self.game, "Goblin Fighter", 12, 12, hn_img, max_hp=30, attack_speed=1.8);
         self.entities.add(goblin)
+
         self.ui = UI(self.game);
         self.game.ui = self.ui
         self.context_menu = ContextMenu(self.game);
@@ -302,17 +312,18 @@ class GameplayState(BaseState):
         ico.fill((255, 215, 0, 200))
         if icon_path.exists(): ico_original = self.game._load_image("item_icon.png"); ico = ico_original
         self.inventory.add_item(Item("Magic Stone", ico))
+
         self.game.damage_splats = []
 
     def handle_events(self, events: list[pygame.event.Event]):
-        # Pełna logika handle_events z ostatniej wersji game.py dla GameplayState
         mouse_pos_physical = None;
         scaled_mouse_pos_for_logic = None
         for event in events:
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:  # Dodano obsługę Escape do pauzy
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 print("[DEBUG] Escape pressed in GameplayState, switching to PAUSE_MENU")
-                self.game.state_manager.set_state("PAUSE_MENU", self)  # Przekaż obecny stan gry jako dane
-                return  # Zakończ przetwarzanie zdarzeń dla tej klatki
+                # Przekaż informację, skąd przyszliśmy, aby Pauza mogła wrócić
+                self.game.state_manager.set_state("PAUSE_MENU", {"previous_state": "GAMEPLAY"})
+                return
 
             if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.MOUSEMOTION:
                 mouse_pos_physical = event.pos
@@ -336,16 +347,21 @@ class GameplayState(BaseState):
                             scaled_mouse_pos_for_logic):
                         if hasattr(self.ui,
                                    'toggle_game_menu'): self.ui.toggle_game_menu(); action_taken_by_ui_or_menu = True
+
                 if not action_taken_by_ui_or_menu and self.ui and hasattr(self.ui,
                                                                           'in_game_menu') and self.ui.in_game_menu.is_visible:
                     if self.ui.in_game_menu.handle_click(scaled_mouse_pos_for_logic): action_taken_by_ui_or_menu = True
+
                 if not action_taken_by_ui_or_menu and self.context_menu and self.context_menu.is_visible:
                     if self.context_menu.handle_click(mouse_pos_physical): action_taken_by_ui_or_menu = True
+
                 if not action_taken_by_ui_or_menu and event.button == 1 and self.ui and hasattr(self.ui,
                                                                                                 'dialogue_active') and self.ui.dialogue_active:
                     self.ui.next_dialogue_line();
                     action_taken_by_ui_or_menu = True
+
                 if action_taken_by_ui_or_menu: continue
+
                 if event.button == 1:
                     if not self.player or not self.player.is_alive: continue
                     world_mx = scaled_mouse_pos_for_logic[0] + self.camera.rect.x
@@ -353,8 +369,9 @@ class GameplayState(BaseState):
                     tx_iso, ty_iso = screen_to_iso(world_mx, world_my)
                     clicked_entity_lmb = None
                     for entity_sprite in self.entities:
-                        if entity_sprite.rect.collidepoint(world_mx,
-                                                           world_my) and entity_sprite != self.player: clicked_entity_lmb = entity_sprite; break
+                        if entity_sprite.rect.collidepoint(world_mx, world_my) and entity_sprite != self.player:
+                            clicked_entity_lmb = entity_sprite;
+                            break
                     if clicked_entity_lmb and clicked_entity_lmb.is_alive:
                         if isinstance(clicked_entity_lmb, HostileNPC):
                             self.player.initiate_attack_on_target(clicked_entity_lmb)
@@ -364,6 +381,7 @@ class GameplayState(BaseState):
                             self.game.show_examine_text(clicked_entity_lmb)
                     else:
                         self.player.set_path(tx_iso, ty_iso, self.tilemap, is_manual_walk_command=True)
+
                 elif event.button == 3:
                     if not self.player or not self.player.is_alive: continue
                     world_mx_menu = scaled_mouse_pos_for_logic[0] + self.camera.rect.x
@@ -388,7 +406,6 @@ class GameplayState(BaseState):
                         self.context_menu.hide()
 
     def update(self, dt: float):
-        # ... (pełny kod update dla GameplayState z ostatniej wersji game.py) ...
         if not self.player or not self.entities or not self.tilemap or not self.camera: return
         self.entities.update(dt, self.tilemap, self.entities)
         active_splats = [];
@@ -399,43 +416,61 @@ class GameplayState(BaseState):
         if self.player: self.camera.update(self.player.rect)
 
     def draw(self, surface: pygame.Surface):
-        # ... (pełny kod draw dla GameplayState z ostatniej wersji game.py) ...
-        if not self.player or not self.tilemap or not self.camera or not self.ui or not self.entities or not self.context_menu: surface.fill(
-            (10, 0, 0)); return
-        surface.fill((48, 48, 64));
+        if not self.player or not self.tilemap or not self.camera or not self.ui or not self.entities or not self.game.context_menu:
+            surface.fill((10, 0, 0))
+            return
+
+        surface.fill((48, 48, 64))
         self.tilemap.draw(surface, self.camera)
-        for e in self.entities:
-            if e.is_alive: sx, sy = iso_to_screen(e.ix,
-                                                  e.iy);sx -= self.camera.rect.x;sy -= self.camera.rect.y + C.TILE_HEIGHT // 2;sr = pygame.Rect(
-                sx - C.TILE_WIDTH // 4, sy - C.TILE_HEIGHT // 4, C.TILE_WIDTH // 2,
-                C.TILE_HEIGHT // 2);pygame.draw.ellipse(surface, (0, 0, 0, 100), sr)
+
+        for entity in self.entities:
+            if entity.is_alive:
+                sx, sy = iso_to_screen(entity.ix, entity.iy)
+                sx -= self.camera.rect.x;
+                sy -= self.camera.rect.y + C.TILE_HEIGHT // 2
+                shadow_rect = pygame.Rect(sx - C.TILE_WIDTH // 4, sy - C.TILE_HEIGHT // 4, C.TILE_WIDTH // 2,
+                                          C.TILE_HEIGHT // 2)
+                pygame.draw.ellipse(surface, (0, 0, 0, 100), shadow_rect)
+
         if self.player.is_alive and self.player.target_tile_coords:
-            tx, ty = self.player.target_tile_coords;
-            scx, scy = iso_to_screen(tx, ty);
-            scx -= self.camera.rect.x;
-            scy -= self.camera.rect.y;
-            s = C.TILE_WIDTH // 2;
-            pygame.draw.line(surface, (255, 0, 0), (scx - s, scy - s), (scx + s, scy + s), 3);
-            pygame.draw.line(surface, (255, 0, 0), (scx - s, scy + s), (scx + s, scy - s), 3)
-        for e in self.entities:
-            if isinstance(e, HostileNPC) and e.is_alive and e.show_hp_bar and e.max_hp > 0:
-                bw = C.TILE_WIDTH * 0.6;
-                bh = 6;
-                lerc = self.camera.apply(e.rect);
-                bx = lerc.centerx - bw // 2;
-                by = lerc.top - bh - 4;
-                pygame.draw.rect(surface, (50, 50, 50), (bx, by, bw, bh));
-                hp_p = e.hp / e.max_hp;
-                fw = int(bw * hp_p);
-                pygame.draw.rect(surface, (200, 0, 0), (bx, by, fw, bh));
-                pygame.draw.rect(surface, (180, 180, 180), (bx, by, bw, bh), 1)
-        se = sorted(list(self.entities), key=lambda x: (x.rect.centery, x.rect.centerx))
-        for e in se:
-            if e.is_alive:
-                surface.blit(e.image, self.camera.apply(e.rect))
-            elif hasattr(e, 'corpse_image') and e.corpse_image:
-                surface.blit(e.corpse_image, self.camera.apply(e.rect))
-        for s in self.game.damage_splats: s.draw(surface)
+            tx, ty = self.player.target_tile_coords
+            screen_x_center, screen_y_center = iso_to_screen(tx, ty)
+            screen_x_center -= self.camera.rect.x;
+            screen_y_center -= self.camera.rect.y
+            points = [(screen_x_center, screen_y_center - C.TILE_HEIGHT // 2),
+                      (screen_x_center + C.TILE_WIDTH // 2, screen_y_center),
+                      (screen_x_center, screen_y_center + C.TILE_HEIGHT // 2),
+                      (screen_x_center - C.TILE_WIDTH // 2, screen_y_center)]
+            highlight_color = (255, 0, 0, 100)
+            tile_surf_size = (C.TILE_WIDTH, C.TILE_HEIGHT);
+            poly_surface = pygame.Surface(tile_surf_size, pygame.SRCALPHA)
+            local_points = [(tile_surf_size[0] // 2, 0), (tile_surf_size[0], tile_surf_size[1] // 2),
+                            (tile_surf_size[0] // 2, tile_surf_size[1]), (0, tile_surf_size[1] // 2)]
+            pygame.draw.polygon(poly_surface, highlight_color, local_points)
+            surface.blit(poly_surface, (screen_x_center - C.TILE_WIDTH // 2, screen_y_center - C.TILE_HEIGHT // 2))
+
+        for entity in self.entities:
+            if isinstance(entity, HostileNPC) and entity.is_alive and entity.show_hp_bar:
+                if entity.max_hp > 0:
+                    bar_w = C.TILE_WIDTH * 0.6;
+                    bar_h = 6
+                    log_rect = self.camera.apply(entity.rect)
+                    bar_x = log_rect.centerx - bar_w // 2;
+                    bar_y = log_rect.top - bar_h - 4
+                    pygame.draw.rect(surface, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h))
+                    fill_w = int(bar_w * (entity.hp / entity.max_hp))
+                    pygame.draw.rect(surface, (200, 0, 0), (bar_x, bar_y, fill_w, bar_h))
+                    pygame.draw.rect(surface, (180, 180, 180), (bar_x, bar_y, bar_w, bar_h), 1)
+
+        sorted_entities = sorted(list(self.entities), key=lambda x: (x.rect.centery, x.rect.centerx))
+        for entity in sorted_entities:
+            if entity.is_alive:
+                surface.blit(entity.image, self.camera.apply(entity.rect))
+            elif hasattr(entity, 'corpse_image') and entity.corpse_image:
+                surface.blit(entity.corpse_image, self.camera.apply(entity.rect))
+
+        for splat in self.game.damage_splats: splat.draw(surface)
+
         self.ui.draw(surface)
 
     def on_exit(self):
@@ -443,19 +478,26 @@ class GameplayState(BaseState):
         return None
 
 
-class PauseMenuState(BaseState):  # Podstawowa implementacja
+class PauseMenuState(BaseState):
     def __init__(self, game: "Game"):
         super().__init__(game)
         self.font_title = pygame.font.SysFont("Consolas", 50, bold=True)
         self.font_options = pygame.font.SysFont("Consolas", 30)
         self.options = ["Resume Game", "Save Game (Slot 1)", "Load Game", "Main Menu"]
         self.selected_option_index = 0
-        self.buttons: List[Tuple[pygame.Surface, pygame.Rect, str]] = []
-        self.gameplay_snapshot = None  # Do przechwycenia obrazu stanu Gameplay
+        self.buttons: List[Tuple[Optional[pygame.Surface], pygame.Rect, str]] = []
+        self.gameplay_snapshot = None
 
         self.button_width = 350
         self.button_height = 50
         self.button_padding = 15
+        self.text_color = (210, 210, 230)
+        self.highlight_text_color = (255, 255, 200)
+        self.button_color = (60, 60, 90)
+        self.button_highlight_color = (90, 90, 130)
+        self.border_color = (110, 110, 160)
+        self.border_highlight_color = (160, 160, 210)
+
         self._create_buttons()
         print("[DEBUG] PauseMenuState initialized")
 
@@ -467,18 +509,14 @@ class PauseMenuState(BaseState):  # Podstawowa implementacja
             rect = pygame.Rect((C.SCREEN_WIDTH - self.button_width) // 2,
                                start_y + i * (self.button_height + self.button_padding),
                                self.button_width, self.button_height)
-            # Tekst będzie renderowany w draw
             self.buttons.append((None, rect, opt_text))
 
-    def on_enter(self, previous_state_data=None):  # previous_state_data to może być referencja do GameplayState
+    def on_enter(self, previous_state_data=None):
         super().on_enter(previous_state_data)
         self.selected_option_index = 0
-        # Zrób "zrzut ekranu" stanu GameplayState, aby go przyciemnić
-        # Zakładamy, że GameplayState przekazał swoją powierzchnię (logical_screen)
-        # lub że możemy ją pobrać z self.game.logical_screen (jeśli ostatnio rysował ją GameplayState)
-        self.gameplay_snapshot = self.game.logical_screen.copy()
+        self.gameplay_snapshot = self.game.logical_screen.copy()  # Zapisz aktualny obraz gry
         dim_surface = pygame.Surface(self.gameplay_snapshot.get_size(), pygame.SRCALPHA)
-        dim_surface.fill((0, 0, 0, 180))  # Mocniejsze przyciemnienie
+        dim_surface.fill((0, 0, 0, 180))
         self.gameplay_snapshot.blit(dim_surface, (0, 0))
 
     def handle_events(self, events: list[pygame.event.Event]):
@@ -512,8 +550,9 @@ class PauseMenuState(BaseState):  # Podstawowa implementacja
             self.game.state_manager.set_state("GAMEPLAY")
         elif action == "Save Game (Slot 1)":
             self.game.save_game(1)
-            # Pozostajemy w menu pauzy, ewentualnie dodaj komunikat o zapisie
         elif action == "Load Game":
+            # Zapamiętaj, że przyszliśmy z pauzy, aby LoadGame mogło wrócić do pauzy
+            self.game.state_manager.previous_active_state_key_for_load_game = "PAUSE_MENU"
             self.game.state_manager.set_state("LOAD_GAME")
         elif action == "Main Menu":
             self.game.state_manager.set_state("MENU")
@@ -524,7 +563,7 @@ class PauseMenuState(BaseState):  # Podstawowa implementacja
     def draw(self, surface: pygame.Surface):
         if self.gameplay_snapshot:
             surface.blit(self.gameplay_snapshot, (0, 0))
-        else:  # Fallback, jeśli snapshot nie został zrobiony
+        else:
             surface.fill((10, 10, 20))
 
         title_surf = self.font_title.render("Game Paused", True, (230, 230, 250))
@@ -533,10 +572,10 @@ class PauseMenuState(BaseState):  # Podstawowa implementacja
 
         for i, (_, rect, opt_text) in enumerate(self.buttons):
             is_sel = (i == self.selected_option_index)
-            btn_col = (90, 90, 130) if is_sel else (60, 60, 90)
-            brd_col = (160, 160, 210) if is_sel else (110, 110, 160)
-            txt_col = (255, 255, 200) if is_sel else (210, 210, 230)
-            brd_thk = 3 if is_sel else 2
+            btn_col = self.button_highlight_color if is_sel else self.button_color
+            brd_col = self.border_highlight_color if is_sel else self.border_color
+            txt_col = self.highlight_text_color if is_sel else self.text_color
+            brd_thk = 3 if is_sel else 2  # Grubsza ramka dla podświetlonego
             pygame.draw.rect(surface, btn_col, rect, border_radius=6)
             pygame.draw.rect(surface, brd_col, rect, brd_thk, border_radius=6)
             txt_surf = self.font_options.render(opt_text, True, txt_col)
@@ -548,7 +587,7 @@ class LoadGameState(BaseState):
     def __init__(self, game: "Game"):
         super().__init__(game)
         self.font_title = pygame.font.SysFont("Consolas", 40, bold=True)
-        self.font_slots = pygame.font.SysFont("Consolas", 26)  # Mniejsza czcionka dla slotów
+        self.font_slots = pygame.font.SysFont("Consolas", 26)
         self.save_slots_info: List[Dict[str, Any]] = []
         self.slot_rects: List[pygame.Rect] = []
         self.selected_slot_index = 0
@@ -573,21 +612,20 @@ class LoadGameState(BaseState):
 
         num_slots_to_show = len(self.save_slots_info)
         total_slots_height = num_slots_to_show * (self.slot_height + self.slot_padding) - self.slot_padding
-        start_y = (C.SCREEN_HEIGHT // 2) - (total_slots_height // 2) + 30  # Nieco niżej pod tytułem
+        start_y = (C.SCREEN_HEIGHT // 2) - (total_slots_height // 2) + 30
 
         for i, info in enumerate(self.save_slots_info):
             rect = pygame.Rect((C.SCREEN_WIDTH - self.slot_width) // 2,
                                start_y + i * (self.slot_height + self.slot_padding),
                                self.slot_width, self.slot_height)
             self.slot_rects.append(rect)
-        self.selected_slot_index = 0  # Zawsze zaznaczaj pierwszy slot po wejściu
+        self.selected_slot_index = 0
 
     def handle_events(self, events: list[pygame.event.Event]):
         for event in events:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    self.game.state_manager.set_state(
-                        self.game.state_manager.previous_active_state_key or "MENU")  # Powrót do poprzedniego stanu lub menu
+                    self._go_back()
                 elif event.key == pygame.K_UP:
                     if self.slot_rects: self.selected_slot_index = (self.selected_slot_index - 1 + len(
                         self.slot_rects)) % len(self.slot_rects)
@@ -598,18 +636,7 @@ class LoadGameState(BaseState):
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 scaled_mouse_pos = self.game.get_scaled_mouse_pos(event.pos)
                 if self.back_button_rect.collidepoint(scaled_mouse_pos):
-                    # Zamiast wracać do MENU, wróć do poprzedniego stanu, jeśli jest znany
-                    # GameStateManager musiałby przechowywać previous_active_state_key
-                    # Na razie: wracamy do MenuState z PauseMenu, lub do MainMenu z MainMenu
-                    # To wymaga rozbudowy GameStateManager. Na razie wracamy do MENU.
-                    print("[DEBUG] LoadGameState: Back button clicked.")
-                    if self.game.state_manager.active_state_key == "LOAD_GAME" and \
-                            hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game') and \
-                            self.game.state_manager.previous_active_state_key_for_load_game:
-                        self.game.state_manager.set_state(
-                            self.game.state_manager.previous_active_state_key_for_load_game)
-                    else:
-                        self.game.state_manager.set_state("MENU")
+                    self._go_back();
                     return
                 for i, rect in enumerate(self.slot_rects):
                     if rect.collidepoint(scaled_mouse_pos):
@@ -621,6 +648,15 @@ class LoadGameState(BaseState):
                 for i, rect in enumerate(self.slot_rects):
                     if rect.collidepoint(scaled_mouse_pos): self.selected_slot_index = i; break
 
+    def _go_back(self):
+        # Powrót do poprzedniego stanu, który wywołał LoadGameState (Menu Główne lub Menu Pauzy)
+        previous_state = "MENU"  # Domyślnie
+        if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game') and \
+                self.game.state_manager.previous_active_state_key_for_load_game:
+            previous_state = self.game.state_manager.previous_active_state_key_for_load_game
+        print(f"[DEBUG] LoadGameState: Going back to {previous_state}")
+        self.game.state_manager.set_state(previous_state)
+
     def _load_selected_slot(self):
         if 0 <= self.selected_slot_index < len(self.save_slots_info):
             slot_info = self.save_slots_info[self.selected_slot_index]
@@ -631,15 +667,12 @@ class LoadGameState(BaseState):
                     self.game.state_manager.set_state("GAMEPLAY", player_data)
             else:
                 print(f"[DEBUG] LoadGameState: Slot {slot_info['slot']} is empty, cannot load.")
-                if hasattr(self.game.ui, 'show_dialogue') and self.game.ui:  # Pokaż info w UI, jeśli UI jest dostępne
-                    # To może być problematyczne, bo self.game.ui może nie być UI z GameplayState
-                    pass  # Na razie pomiń wyświetlanie komunikatu w UI tutaj
 
     def update(self, dt: float):
         pass
 
     def draw(self, surface: pygame.Surface):
-        surface.fill((35, 30, 45))  # Ciemnofioletowe tło
+        surface.fill((35, 30, 45))
         title_surf = self.font_title.render("Load Saved Game", True, self.text_color)
         title_rect = title_surf.get_rect(center=(C.SCREEN_WIDTH // 2, C.SCREEN_HEIGHT // 5))
         surface.blit(title_surf, title_rect)
@@ -663,12 +696,11 @@ class LoadGameState(BaseState):
             surface.blit(text_surf, text_rect)
 
         # Przycisk Powrotu
-        back_button_color = (80, 30, 30)  # Ciemnoczerwony
+        back_button_color = (80, 30, 30)
         back_border_color = (120, 70, 70)
-        # Sprawdź, czy mysz jest nad przyciskiem Back
         scaled_mouse_pos = self.game.get_scaled_mouse_pos(pygame.mouse.get_pos())
         if self.back_button_rect.collidepoint(scaled_mouse_pos):
-            back_button_color = (110, 40, 40)  # Jaśniejszy czerwony
+            back_button_color = (110, 40, 40)
             back_border_color = (150, 90, 90)
 
         pygame.draw.rect(surface, back_button_color, self.back_button_rect, border_radius=5)
@@ -678,6 +710,6 @@ class LoadGameState(BaseState):
 
     def on_exit(self):
         super().on_exit()
-        # Wyczyść poprzedni stan, jeśli był ustawiony dla powrotu z LoadGameState
+        # Wyczyść zapamiętany poprzedni stan, jeśli istniał
         if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game'):
-            delattr(self.game.state_manager, 'previous_active_state_key_for_load_game')
+            self.game.state_manager.previous_active_state_key_for_load_game = None
