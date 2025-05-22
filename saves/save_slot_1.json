@@ -1,9 +1,9 @@
 {
     "player_data": {
-        "name": "Heros",
+        "name": "gracz",
         "level": 1,
-        "start_ix": 12,
-        "start_iy": 8,
+        "start_ix": 8,
+        "start_iy": 30,
         "max_hp": 100,
         "current_hp": 100,
         "xp": 0,
@@ -25,10 +25,10 @@
             "entity_id": "hostile_goblin_12_12",
             "name": "Goblin Scout",
             "ix": 12,
-            "iy": 9,
-            "hp": 0,
+            "iy": 12,
+            "hp": 30,
             "max_hp": 30,
-            "is_alive": false,
+            "is_alive": true,
             "level": 1,
             "type": "HostileNPC",
             "show_hp_bar": false,
@@ -36,6 +36,6 @@
         }
     ],
     "current_map_id": "map",
-    "timestamp": 32950,
+    "timestamp": 81422,
     "game_version": "0.1.1"
 }
