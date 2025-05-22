@@ -1,0 +1,41 @@
+{
+  "POT001": {
+    "name": "Small Healing Potion",
+    "description": "Restores 25 HP.",
+    "icon_file": "potion_health_small.png",
+    "stackable": true,
+    "max_stack": 5,
+    "type": "consumable",
+    "effects": {"heal": 25},
+    "allowed_actions": ["use", "drop", "examine"]
+  },
+  "SWD001": {
+    "name": "Rusty Sword",
+    "description": "A dull, rusty sword.",
+    "icon_file": "sword_rusty.png",
+    "stackable": false,
+    "max_stack": 1,
+    "type": "weapon",
+    "slot": "main_hand",
+    "effects": {"attack_power_bonus": 2},
+    "allowed_actions": ["wear", "drop", "examine"]
+  },
+  "MISC001": {
+    "name": "Gold Coin",
+    "description": "A shiny gold coin.",
+    "icon_file": "coin_gold.png",
+    "stackable": true,
+    "max_stack": 10000,
+    "type": "currency",
+    "allowed_actions": ["drop", "examine"]
+  },
+  "BONES001":{
+    "name": "Bones",
+    "description": "Bones loot from monsters.",
+    "icon_file": "bones.png",
+    "stackable": false,
+    "max_stack": 0,
+    "type": "things",
+    "allowed_actions": ["drop", "examine"]
+  }
+}

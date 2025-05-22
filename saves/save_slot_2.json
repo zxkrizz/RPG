@@ -1,9 +1,9 @@
 {
     "player_data": {
-        "name": "Hero",
+        "name": "DevBypass",
         "level": 1,
-        "start_ix": 2,
-        "start_iy": 8,
+        "start_ix": 5,
+        "start_iy": 5,
         "max_hp": 100,
         "current_hp": 100,
         "xp": 0,
@@ -36,6 +36,6 @@
         }
     ],
     "current_map_id": "map",
-    "timestamp": 34869,
+    "timestamp": 3912,
     "game_version": "0.1.1"
 }

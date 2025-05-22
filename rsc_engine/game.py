@@ -3,7 +3,7 @@ from pathlib import Path
 import pygame
 import json
 import os
-
+from rsc_engine.items_manager import ItemManager
 from rsc_engine import constants as C
 from rsc_engine.states import GameStateManager, BaseState, PlayerData
 from rsc_engine.game_states import MenuState, CharacterCreationState, GameplayState, PauseMenuState, LoadGameState
@@ -53,6 +53,7 @@ class Game:
 
         self.state_manager = GameStateManager(None, self)
         self._register_states()
+        self.item_manager: Optional[Item] = None
 
         initial_state_key = "GAMEPLAY" if C.DEV_SKIP_MENU_AND_CREATOR else "MENU"
         initial_data = None
