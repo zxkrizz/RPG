@@ -1,7 +1,7 @@
 # file: rsc_engine/ui.py
 import pygame
 from rsc_engine import constants as C
-from typing import List, Any, Dict, Callable, Optional
+from typing import List, Any, Dict, Callable, Optional  # Upewnij się, że wszystkie są zaimportowane
 from pathlib import Path
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -11,7 +11,7 @@ class DamageSplat:
     def __init__(self, value: int, center_x: int, entity_top_y: int,
                  icon_image: Optional[pygame.Surface],
                  font: pygame.font.Font,
-                 game_camera):  # game_camera nie jest obecnie używane, ale może być w przyszłości
+                 game_camera):
         self.game_camera = game_camera
         self.initial_entity_top_y = entity_top_y
         self.initial_center_x = center_x
@@ -40,7 +40,7 @@ class DamageSplat:
 
         self.base_x = self.initial_center_x - self.icon_width // 2
         self.base_y = self.initial_entity_top_y - self.icon_height
-        self.current_icon_surface = None  # Dla kopii ikony z ustawioną alfą
+        self.current_icon_surface = None
 
     def update(self, dt: float) -> bool:
         self.lifetime -= dt
@@ -470,7 +470,7 @@ class UI:
                             try:
                                 icon_to_draw = item.icon
                                 icon_display_rect = icon_to_draw.get_rect(center=(x + slot_sz // 2, y + slot_sz // 2))
-                                surface.blit(icon_to_draw, icon_display_rect.topleft)  # Użyj icon_to_draw
+                                surface.blit(icon_to_draw, icon_display_rect.topleft)
                                 if hasattr(item, 'stackable') and item.stackable and hasattr(item,
                                                                                              'quantity') and item.quantity > 1:
                                     quantity_font = self.debug_font

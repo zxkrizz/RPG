@@ -3,6 +3,7 @@ import pygame
 import json
 from rsc_engine.states import BaseState, PlayerData
 from rsc_engine import constants as C
+from pathlib import Path  # <<< POPRAWIONY IMPORT
 
 # Importuj klasy gry potrzebne dla GameplayState
 from rsc_engine.camera import Camera
@@ -11,7 +12,6 @@ from rsc_engine.entity import Player, FriendlyNPC, HostileNPC
 from rsc_engine.ui import UI, ContextMenu
 from rsc_engine.inventory import Inventory, Item
 from rsc_engine.utils import screen_to_iso, iso_to_screen
-from pathlib import Path
 
 from typing import Tuple, Callable, Optional, List, Any, Dict
 
@@ -37,7 +37,7 @@ class MenuState(BaseState):
         self.border_highlight_color = (150, 150, 200)
 
         self._create_buttons()
-        # print("[DEBUG] MenuState initialized") # Usunięto dla czystości logów produkcyjnych
+        # print("[DEBUG] MenuState initialized")
 
     def _create_buttons(self):
         self.buttons = []
@@ -84,6 +84,7 @@ class MenuState(BaseState):
         if selected_action == "New Game":
             self.game.state_manager.set_state("CHARACTER_CREATION")
         elif selected_action == "Load Game":
+            print("[DEBUG] MenuState: Transitioning to LOAD_GAME state.")
             if hasattr(self.game.state_manager, 'previous_active_state_key_for_load_game'):
                 self.game.state_manager.previous_active_state_key_for_load_game = "MENU"
             self.game.state_manager.set_state("LOAD_GAME")
@@ -185,40 +186,31 @@ class CharacterCreationState(BaseState):
         pass
 
     def draw(self, surface: pygame.Surface):
-        surface.fill((25, 30, 35))
-
-        title_surf = self.font_title.render("Create Your Hero", True, self.text_color)
-        title_rect = title_surf.get_rect(center=(C.SCREEN_WIDTH // 2, C.SCREEN_HEIGHT // 4 - 20))
-        surface.blit(title_surf, title_rect)
-
-        prompt_surf = self.font_prompt.render(self.prompt_text, True, self.text_color)
-        prompt_rect = prompt_surf.get_rect(center=(C.SCREEN_WIDTH // 2, self.input_rect.top - 40))
-        surface.blit(prompt_surf, prompt_rect)
-
-        current_input_bg = self.input_bg_color_active if self.active_input else self.input_bg_color_inactive
-        pygame.draw.rect(surface, current_input_bg, self.input_rect, border_radius=5)
-        pygame.draw.rect(surface, self.input_border_color, self.input_rect, 2, border_radius=5)
-
-        name_surf = self.font_input.render(self.player_name, True, self.input_text_color)
-        name_surf_rect = name_surf.get_rect(left=self.input_rect.left + 10, centery=self.input_rect.centery)
-        surface.blit(name_surf, name_surf_rect)
-
-        # Kursor tekstowy
+        surface.fill((25, 30, 35));
+        ts = self.font_title.render("Create Your Hero", True, self.text_color);
+        tr = ts.get_rect(center=(C.SCREEN_WIDTH // 2, C.SCREEN_HEIGHT // 4 - 20));
+        surface.blit(ts, tr)
+        ps = self.font_prompt.render(self.prompt_text, True, self.text_color);
+        pr = ps.get_rect(center=(C.SCREEN_WIDTH // 2, self.input_rect.top - 40));
+        surface.blit(ps, pr)
+        ibg = self.input_bg_color_active if self.active_input else self.input_bg_color_inactive;
+        pygame.draw.rect(surface, ibg, self.input_rect, 0, 5);
+        pygame.draw.rect(surface, self.input_border_color, self.input_rect, 2, 5)
+        ns = self.font_input.render(self.player_name, True, self.input_text_color);
+        nsr = ns.get_rect(left=self.input_rect.left + 10, centery=self.input_rect.centery);
+        surface.blit(ns, nsr)
         if self.active_input and (pygame.time.get_ticks() // 400) % 2 == 0:
-            cursor_x = self.input_rect.x + 10 + name_surf.get_width() + 3
-            # VVV POPRAWIONA LOGIKA VVV
+            cursor_x = self.input_rect.x + 10 + ns.get_width() + 3
             if not self.player_name:
                 cursor_x = self.input_rect.x + 10
-                # ^^^ POPRAWIONA LOGIKA ^^^
             cursor_y_start = self.input_rect.y + self.input_rect.height * 0.2
             cursor_y_end = self.input_rect.y + self.input_rect.height * 0.8
             pygame.draw.line(surface, self.input_text_color, (cursor_x, cursor_y_start), (cursor_x, cursor_y_end), 2)
-
-        pygame.draw.rect(surface, self.button_color, self.start_button_rect, border_radius=8)
-        pygame.draw.rect(surface, self.button_border_color, self.start_button_rect, 3, border_radius=8)
-        start_text_surf = self.font_button.render(self.start_button_text, True, self.button_text_color)
-        start_text_rect = start_text_surf.get_rect(center=self.start_button_rect.center)
-        surface.blit(start_text_surf, start_text_rect)
+        pygame.draw.rect(surface, self.button_color, self.start_button_rect, 0, 8);
+        pygame.draw.rect(surface, self.button_border_color, self.start_button_rect, 3, 8);
+        sts = self.font_button.render(self.start_button_text, True, self.button_text_color);
+        strr = sts.get_rect(center=self.start_button_rect.center);
+        surface.blit(sts, strr)
 
 
 class GameplayState(BaseState):
@@ -241,7 +233,7 @@ class GameplayState(BaseState):
 
         if isinstance(loaded_game_or_player_data, PlayerData):
             current_player_data = loaded_game_or_player_data
-            print(f"[INFO] GameplayState entered from Character Creator with: {current_player_data}")
+            # print(f"[INFO] GameplayState entered from Character Creator with: {current_player_data}")
         elif isinstance(loaded_game_or_player_data, dict) and "player_data" in loaded_game_or_player_data:
             current_player_data = PlayerData.from_dict(loaded_game_or_player_data["player_data"])
             loaded_npc_states = loaded_game_or_player_data.get("npc_states", [])
@@ -267,7 +259,7 @@ class GameplayState(BaseState):
                 return
 
         self.tilemap = TileMap(str(map_path), tileset_img)
-        setattr(self.tilemap, 'id', Path(map_path).stem)  # Zapisz ID mapy (nazwę pliku bez rozszerzenia)
+        setattr(self.tilemap, 'id', Path(map_path).stem)
         self.game.tilemap = self.tilemap
 
         self.camera = Camera(C.SCREEN_WIDTH, C.SCREEN_HEIGHT)
@@ -297,11 +289,13 @@ class GameplayState(BaseState):
             f"friendly_oldman_{def_fn_ix}_{def_fn_iy}": {"type": FriendlyNPC, "name": "Old Man", "ix": def_fn_ix,
                                                          "iy": def_fn_iy, "image_file": "friendly_npc.png",
                                                          "dialogue": ["Witaj w GameplayState!", "To jest test."],
-                                                         "max_hp": 30, "attack_speed": 9999},
+                                                         "max_hp": 30, "attack_speed": 9999,
+                                                         "entity_id": f"friendly_oldman_{def_fn_ix}_{def_fn_iy}"},
             f"hostile_goblin_{def_gn_ix}_{def_gn_iy}": {"type": HostileNPC, "name": "Goblin Scout", "ix": def_gn_ix,
                                                         "iy": def_gn_iy, "image_file": "hostile_npc.png", "max_hp": 30,
                                                         "attack_speed": 1.8, "level": 1, "attack_power": 5,
-                                                        "defense": 1, "aggro_radius": 5}
+                                                        "defense": 1, "aggro_radius": 5,
+                                                        "entity_id": f"hostile_goblin_{def_gn_ix}_{def_gn_iy}"}
         }
 
         processed_npc_ids = set()
@@ -312,15 +306,14 @@ class GameplayState(BaseState):
                 processed_npc_ids.add(entity_id);
                 npc_class_name = npc_data.get("type");
                 npc_class = None;
-                image_file_for_npc = default_npc_definitions.get(entity_id, {}).get("image_file",
-                                                                                    "hostile_npc.png")  # Pobierz z definicji
+                image_file_for_npc = default_npc_definitions.get(entity_id, {}).get("image_file", "hostile_npc.png")
                 if npc_class_name == "FriendlyNPC":
                     npc_class = FriendlyNPC
                 elif npc_class_name == "HostileNPC":
                     npc_class = HostileNPC
 
                 if npc_class and npc_data.get("is_alive", True):
-                    print(f"[INFO] Loading NPC from save: {entity_id}")
+                    # print(f"[INFO] Loading NPC from save: {entity_id}")
                     try:
                         img_orig = self.game._load_image(
                             image_file_for_npc); img = self.game._scale_image_proportionally(img_orig,
@@ -330,13 +323,11 @@ class GameplayState(BaseState):
                             (100, 100, 100, 150))
 
                     base_def = default_npc_definitions.get(entity_id, {})
-                    npc_args = {
-                        "game": self.game, "name": npc_data.get("name", base_def.get("name")),
-                        "ix": npc_data.get("ix"), "iy": npc_data.get("iy"), "image": img,
-                        "entity_id": entity_id, "level": npc_data.get("level", base_def.get("level", 1)),
-                        "max_hp": npc_data.get("max_hp", base_def.get("max_hp")),
-                        "attack_speed": npc_data.get("attack_speed", base_def.get("attack_speed", 2.0))
-                    }
+                    npc_args = {"game": self.game, "name": npc_data.get("name", base_def.get("name")),
+                                "ix": npc_data.get("ix"), "iy": npc_data.get("iy"), "image": img,
+                                "entity_id": entity_id, "level": npc_data.get("level", base_def.get("level", 1)),
+                                "max_hp": npc_data.get("max_hp", base_def.get("max_hp")),
+                                "attack_speed": npc_data.get("attack_speed", base_def.get("attack_speed", 2.0))}
                     if npc_class == FriendlyNPC:
                         npc_args["dialogue"] = npc_data.get("dialogue", base_def.get("dialogue"))
                     elif npc_class == HostileNPC:
@@ -347,19 +338,15 @@ class GameplayState(BaseState):
                     npc_instance = npc_class(**npc_args);
                     npc_instance.hp = npc_data.get("hp");
                     npc_instance.is_alive = npc_data.get("is_alive", True)
-                    if isinstance(npc_instance, HostileNPC):
-                        npc_instance.show_hp_bar = npc_data.get("show_hp_bar", False);
-                        npc_instance.is_chasing = npc_data.get("is_chasing", False)
-                        npc_instance.start_ix, npc_instance.start_iy = npc_data.get("ix"), npc_data.get(
-                            "iy")  # Użyj pozycji z zapisu jako startowej
-
+                    if isinstance(npc_instance, HostileNPC): npc_instance.show_hp_bar = npc_data.get("show_hp_bar",
+                                                                                                     False); npc_instance.is_chasing = npc_data.get(
+                        "is_chasing", False); npc_instance.start_ix, npc_instance.start_iy = npc_data.get(
+                        "ix"), npc_data.get("iy")
                     if npc_instance.is_alive: self.entities.add(npc_instance)
-                elif not npc_data.get("is_alive", True):
-                    print(f"[INFO] NPC {entity_id} was dead in save, not creating.")
-
+                # elif not npc_data.get("is_alive", True): print(f"[INFO] NPC {entity_id} was dead in save, not creating.")
         for entity_id, def_data in default_npc_definitions.items():
             if entity_id not in processed_npc_ids:
-                print(f"[INFO] Creating default NPC: {entity_id}")
+                # print(f"[INFO] Creating default NPC: {entity_id}")
                 npc_class = def_data["type"]
                 try:
                     img_orig = self.game._load_image(
@@ -368,7 +355,6 @@ class GameplayState(BaseState):
                 except:
                     img = pygame.Surface((C.TARGET_CHAR_HEIGHT, C.TARGET_CHAR_HEIGHT), pygame.SRCALPHA); img.fill(
                         (100, 100, 100, 150))
-
                 npc_args = {"game": self.game, "name": def_data["name"], "ix": def_data["ix"], "iy": def_data["iy"],
                             "image": img, "entity_id": entity_id, "level": def_data.get("level", 1),
                             "max_hp": def_data["max_hp"], "attack_speed": def_data.get("attack_speed", 2.0)}
@@ -386,39 +372,20 @@ class GameplayState(BaseState):
         self.game.ui = self.ui
         self.context_menu = ContextMenu(self.game);
         self.game.context_menu = self.context_menu
-        self.inventory = Inventory(self.game, rows=4, cols=5)  # Przekazujemy self.game do Inventory
+        self.inventory = Inventory(self.game, rows=4, cols=5);
         self.game.inventory = self.inventory
-
-        # Usuwamy bezpośrednie tworzenie Item tutaj:
-        # icon_path = C.ASSETS/"item_icon.png";
-        # ico=pygame.Surface((32,32),pygame.SRCALPHA);
-        # ico.fill((255,215,0,200))
-        # if icon_path.exists():
-        #     try:
-        #         ico_original=self.game._load_image("item_icon.png");
-        #         ico=ico_original
-        #     except Exception as e:
-        #         print(f"Could not load item_icon.png in GameplayState on_enter: {e}")
-
-        # self.inventory.add_item(Item("Magic Stone", ico)); # <<< STARA, BŁĘDNA LINIA
-
-        # VVV POPRAWIONY SPOSÓB DODAWANIA PRZEDMIOTU VVV
-        # Użyj item_id zdefiniowanego w items.json
-        # Upewnij się, że ItemManager jest już zainicjalizowany w self.game
-        if hasattr(self.game, 'item_manager') and self.game.item_manager:
-            item_id_to_add = "MISC001"  # Przykładowe ID dla "Gold Coin" lub inne, które masz
-            if self.game.item_manager.item_exists(item_id_to_add):
-                self.inventory.add_item(item_id_to_add, 1)  # Dodaj 1 sztukę
-                print(f"[INFO] Added '{item_id_to_add}' to inventory.")
-            else:
-                print(f"[WARNING] Item ID '{item_id_to_add}' not found in item definitions. Cannot add to inventory.")
-        else:
-            print("[ERROR] ItemManager not initialized in game object. Cannot add items to inventory.")
-        # ^^^ KONIEC POPRAWKI ^^^
-
+        icon_path = C.ASSETS / "item_icon.png";
+        ico = pygame.Surface((32, 32), pygame.SRCALPHA);
+        ico.fill((255, 215, 0, 200))
+        if icon_path.exists():
+            try:
+                ico_original = self.game._load_image("item_icon.png"); ico = ico_original
+            except:
+                print(f"Could not load item_icon.png in GameplayState on_enter")
+        # self.inventory.add_item("MISC001", 1) # Na razie zakomentowane
         self.game.damage_splats = []
 
-def handle_events(self, events: list[pygame.event.Event]):
+    def handle_events(self, events: list[pygame.event.Event]):
         mouse_pos_physical = None;
         scaled_mouse_pos_for_logic = None
         for event in events:
@@ -513,15 +480,17 @@ def handle_events(self, events: list[pygame.event.Event]):
         if not self.player or not self.entities or not self.tilemap or not self.camera: return
         self.entities.update(dt, self.tilemap, self.entities)
         active_splats = [];
-        for splat in self.game.damage_splats:
-            if splat.update(dt): active_splats.append(splat)
-        self.game.damage_splats = active_splats
+        if hasattr(self.game, 'damage_splats') and isinstance(self.game.damage_splats, list):
+            for splat in self.game.damage_splats:
+                if splat.update(dt): active_splats.append(splat)
+            self.game.damage_splats = active_splats
+
         if self.player and not self.player.is_alive and self.game.running: print("GAME OVER - Player is dead")
         if self.player: self.camera.update(self.player.rect)
 
     def draw(self, surface: pygame.Surface):
-        if not self.player or not self.tilemap or not self.camera or not self.ui or not self.entities or \
-                not hasattr(self.game, 'context_menu') or self.game.context_menu is None:
+        if not self.player or not self.tilemap or not self.camera or not self.ui or not self.entities or not hasattr(
+                self.game, 'context_menu') or self.game.context_menu is None:
             surface.fill((10, 0, 0))
             return
 
@@ -537,7 +506,6 @@ def handle_events(self, events: list[pygame.event.Event]):
                                           C.TILE_HEIGHT // 2)
                 pygame.draw.ellipse(surface, (0, 0, 0, 100), shadow_rect)
 
-                # Rysowanie podświetlonego kafelka celu gracza
         if self.player.is_alive and self.player.target_tile_coords:
             tx, ty = self.player.target_tile_coords
             screen_x_center, screen_y_center = iso_to_screen(tx, ty)
@@ -579,16 +547,16 @@ def handle_events(self, events: list[pygame.event.Event]):
             for splat in self.game.damage_splats:
                 splat.draw(surface)
 
-            self.ui.draw(surface)
+        self.ui.draw(surface)
 
     def on_exit(self):
         super().on_exit()
         if self.game.player and self.game.player.is_alive:
             current_map_id = "default_map"
-            if self.tilemap and hasattr(self.tilemap, 'id'):
-                current_map_id = self.tilemap.id
-            elif self.tilemap and hasattr(self.tilemap, 'csv_path'):
-                current_map_id = Path(self.tilemap.csv_path).stem
+            if self.tilemap:
+                current_map_id = getattr(self.tilemap, 'id', None)
+                if current_map_id is None:
+                    current_map_id = Path(getattr(self.tilemap, 'csv_path', "default_map.csv")).stem
 
             self.game.shared_game_data["player_data_on_pause"] = PlayerData(
                 name=self.game.player.name, level=self.game.player.level,
@@ -604,22 +572,20 @@ class PauseMenuState(BaseState):
         super().__init__(game);
         self.font_title = pygame.font.SysFont("Consolas", 50, bold=True);
         self.font_options = pygame.font.SysFont("Consolas", 30);
-        self.options = ["Resume Game", "Save Game (Slot 1)", "Save Game (Slot 2)", "Save Game (Slot 3)", "Load Game",
-                        "Main Menu"];  # Zaktualizowane opcje
+        self.options = ["Resume Game", "Save to Slot 1", "Save to Slot 2", "Save to Slot 3", "Load Game", "Main Menu"];
         self.selected_option_index = 0;
         self.buttons: List[Tuple[Optional[pygame.Surface], pygame.Rect, str]] = [];
         self.gameplay_snapshot = None
         self.button_width = 380;
         self.button_height = 45;
-        self.button_padding = 10;  # Dostosowane wymiary
+        self.button_padding = 10;
         self.text_color = (210, 210, 230);
         self.highlight_text_color = (255, 255, 200);
         self.button_color = (60, 60, 90);
         self.button_highlight_color = (90, 90, 130);
         self.border_color = (110, 110, 160);
         self.border_highlight_color = (160, 160, 210)
-        self._create_buttons();
-        print("[DEBUG] PauseMenuState initialized")
+        self._create_buttons();  # print("[DEBUG] PauseMenuState initialized")
 
     def _create_buttons(self):
         self.buttons = [];
